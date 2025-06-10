@@ -11,7 +11,8 @@ import signal
 from datetime import datetime, timedelta
 from collections import defaultdict, deque
 from dotenv import load_dotenv
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request
+from functools import wraps
 
 from DataBase import start_api_key_cleanup_loop
 
@@ -40,6 +41,26 @@ bot_start_time = None
 server_count = 0
 bot_status = "Starting..."
 
+# 10分ごとのBotオンライン記録用
+isBot = False
+last_isBot_update = None
+isBot_patch = None  # 最新情報のパッチ用
+
+async def update_isBot_periodically():
+    global isBot, last_isBot_update, bot_instance, isBot_patch
+    while True:
+        # Botがオンラインかどうかを判定
+        current = bot_instance is not None and bot_instance.is_ready()
+        now = datetime.now()
+        # 10分ごとにパッチとして最新情報を保存
+        isBot_patch = {
+            'isBot': current,
+            'timestamp': now.isoformat()
+        }
+        isBot = current
+        last_isBot_update = now
+        await asyncio.sleep(600)  # 10分(600秒)ごとに更新
+
 # Flask アプリケーション
 app = Flask(__name__)
 
@@ -50,9 +71,33 @@ def dashboard():
     return render_template("index.html")
 
 
+# /api/bot-status レート制限用
+status_rate_limit = {
+    'last_access': None,
+    'count': 0
+}
+STATUS_RATE_LIMIT_WINDOW = 3  # 秒
+STATUS_RATE_LIMIT_COUNT = 5   # 3秒間に5回まで
+
+def status_rate_limiter(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        now = datetime.now()
+        last = status_rate_limit['last_access']
+        if last and (now - last).total_seconds() < STATUS_RATE_LIMIT_WINDOW:
+            status_rate_limit['count'] += 1
+        else:
+            status_rate_limit['count'] = 1
+        status_rate_limit['last_access'] = now
+        if status_rate_limit['count'] > STATUS_RATE_LIMIT_COUNT:
+            return jsonify({'error': 'Too many requests'}), 429
+        return f(*args, **kwargs)
+    return decorated_function
+
 @app.route("/api/bot-status")
+@status_rate_limiter
 def api_bot_status():
-    global bot_instance, bot_start_time, server_count, bot_status
+    global bot_instance, bot_start_time, server_count, bot_status, isBot_patch
 
     uptime = ""
     if bot_start_time:
@@ -64,6 +109,7 @@ def api_bot_status():
 
     bot_name = bot_instance.user.name if bot_instance and bot_instance.user else "Bot"
 
+    patch = isBot_patch if isBot_patch else {'isBot': False, 'timestamp': None}
     return jsonify(
         {
             "bot_name": bot_name,
@@ -71,10 +117,10 @@ def api_bot_status():
             "server_count": server_count,
             "uptime": uptime,
             "start_time": bot_start_time.isoformat() if bot_start_time else None,
+            "isBot": patch['isBot'],
+            "last_isBot_update": patch['timestamp'],
         }
     )
-
-
 
 def registerFlask(app, bot_instance):
     """
@@ -191,6 +237,11 @@ def main():
     intents.voice_states = True
     bot = commands.Bot(command_prefix=PREFIX, intents=intents, help_command=None)
     bot_instance = bot    
+    
+    async def start_periodic_tasks():
+        await asyncio.sleep(5)  # Bot起動直後の安定化待ち
+        asyncio.create_task(update_isBot_periodically())
+
     @bot.event
     async def on_ready():
         global server_count, bot_status
@@ -225,6 +276,8 @@ def main():
         )
         print("ℹ️ Botステータス設定完了。")
         print(f"ℹ️ Webダッシュボード: http://0.0.0.0:5000/")
+
+        await start_periodic_tasks()
 
     @bot.event
     async def on_guild_join(guild):
