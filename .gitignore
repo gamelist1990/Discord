@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+config.json
+# VSCode
+.vscode/
+# OS
+.DS_Store
+Thumbs.db
+# Discord Bot
+*.db
+# その他
+*.log
