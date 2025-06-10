@@ -87,7 +87,7 @@ def registerFlask(app, bot_instance):
 def run_flask():
     global bot_instance
     registerFlask(app, bot_instance)
-    app.run(host="localhost", port=5000, debug=False, use_reloader=False)
+    app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
 
 
 # 設定ファイルの読み書き
@@ -187,7 +187,6 @@ def main():
     intents = discord.Intents.default()
     intents.message_content = True
     intents.members = True
-    intents.presences = True  # プレゼンス情報も取得
     intents.guilds = True
     intents.voice_states = True
     bot = commands.Bot(command_prefix=PREFIX, intents=intents, help_command=None)
@@ -225,7 +224,7 @@ def main():
             status=discord.Status.online,
         )
         print("ℹ️ Botステータス設定完了。")
-        print(f"ℹ️ Webダッシュボード: http://localhost:5000/")
+        print(f"ℹ️ Webダッシュボード: http://0.0.0.0:5000/")
 
     @bot.event
     async def on_guild_join(guild):
