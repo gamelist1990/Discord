@@ -1,5 +1,6 @@
 from discord.ext import commands
-from index import register_command, save_config, load_config
+from plugins import register_command
+from index import save_config, load_config
 
 # サーバー管理者をguildAdminsに追加するコマンド
 

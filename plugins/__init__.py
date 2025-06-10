@@ -1,4 +1,12 @@
-def register_command(bot, command, aliases=None, admin=False):
+from typing import Optional
+from discord.ext.commands import Bot, Command
+
+def register_command(
+    bot: Bot,
+    command: Command,
+    aliases: Optional[list[str]] = None,
+    admin: bool = False
+) -> None:
     """
     外部プラグイン/モジュールからも呼び出せるようにグローバルに公開。
     command: discord.ext.commands.Command オブジェクト

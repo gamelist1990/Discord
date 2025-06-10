@@ -11,9 +11,9 @@ import signal
 from datetime import datetime, timedelta
 from collections import defaultdict, deque
 from dotenv import load_dotenv
-from flask import Flask, render_template, jsonify, request
-import requests
-from plugins import register_command
+from flask import Flask, render_template, jsonify
+
+from DataBase import start_api_key_cleanup_loop
 
 CONFIG_FILE_NAME = "config.json"
 EULA_TEXT = """
@@ -187,11 +187,11 @@ def main():
     intents = discord.Intents.default()
     intents.message_content = True
     intents.members = True
+    intents.presences = True  # プレゼンス情報も取得
     intents.guilds = True
     intents.voice_states = True
     bot = commands.Bot(command_prefix=PREFIX, intents=intents, help_command=None)
-    bot_instance = bot
-
+    bot_instance = bot    
     @bot.event
     async def on_ready():
         global server_count, bot_status
@@ -200,6 +200,8 @@ def main():
         # サーバー数更新
         server_count = len(bot.guilds)
         bot_status = "Online"
+
+        start_api_key_cleanup_loop()
 
         # グローバル管理者が未設定ならBotオーナーを自動登録
         if not config.get("globalAdmins"):
@@ -210,6 +212,10 @@ def main():
             print(
                 f"✔ Botオーナー {app_info.owner} ({owner_id}) をグローバル管理者に自動登録しました。"
             )
+        
+        # プラグインのロード
+        await load_plugins(bot)
+        
         # Botステータス
         await bot.change_presence(
             activity=discord.Activity(
@@ -284,13 +290,6 @@ def main():
     @bot.event
     async def on_command_error(ctx, error):
         print(f"❌ コマンドエラー: {error}")
-        try:
-            await ctx.send("❌ コマンド実行中にエラーが発生しました。")
-        except:
-            pass
-        
-    # プラグインのロードを非同期で実行
-    asyncio.run(load_plugins(bot))
 
     # Flask アプリケーションを別スレッドで起動
     flask_thread = threading.Thread(target=run_flask, daemon=True)

@@ -2,7 +2,8 @@ from discord.ext import commands
 import discord
 from discord import Embed, ButtonStyle, Interaction
 from discord.ui import View, Button
-from index import register_command, load_config, is_admin
+from plugins import register_command
+from index import load_config, is_admin
 from datetime import datetime, timedelta
 
 # 管理者専用: メッセージ一括削除コマンド
@@ -76,17 +77,20 @@ def setup(bot):
                     self.ctx = ctx
                     self.author_id = ctx.author.id
                     self.channel = ctx.channel
-                    # メッセージ履歴から日付を抽出
                     self.message_dates = []
                     self.max_days = max_days
                     self.max_messages = max_messages
                 async def setup_items(self):
-                    # 最新max_messages件から日付を抽出
+                    # 実際に削除可能なメッセージの日付のみ抽出
                     unique_dates = set()
+                    guild = self.channel.guild
+                    me = guild.me if guild else None
                     async for msg in self.channel.history(limit=self.max_messages):
-                        unique_dates.add(msg.created_at.date())
-                        if len(unique_dates) >= self.max_days:
-                            break
+                        # Botが削除できるメッセージのみ対象
+                        if me and (msg.author == me or self.channel.permissions_for(me).manage_messages):
+                            unique_dates.add(msg.created_at.date())
+                            if len(unique_dates) >= self.max_days:
+                                break
                     # 新しい順に並べてボタン追加
                     for day in sorted(unique_dates, reverse=True):
                         date_str = day.strftime("%Y/%m/%d")

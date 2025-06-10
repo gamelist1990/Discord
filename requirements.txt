@@ -1,0 +1,22 @@
+# Discord Bot 依存関係
+discord.py>=2.3.0
+python-dotenv>=1.0.0
+flask>=2.3.0
+aiohttp>=3.8.0
+requests>=2.28.0
+
+# データベース（JSONファイルベース、標準ライブラリを使用）
+# json - 標準ライブラリ
+# sqlite3 - 標準ライブラリ（将来的な拡張用）
+
+# システム関連（標準ライブラリ）
+# os - 標準ライブラリ
+# sys - 標準ライブラリ
+# asyncio - 標準ライブラリ
+# threading - 標準ライブラリ
+# signal - 標準ライブラリ
+# datetime - 標準ライブラリ
+# collections - 標準ライブラリ
+# importlib - 標準ライブラリ
+# glob - 標準ライブラリ
+# re - 標準ライブラリ

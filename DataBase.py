@@ -1,21 +1,39 @@
 import os
 import json
+import shutil
 from threading import Lock
+from datetime import datetime
+import threading
+import time
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_FILE = os.path.join(BASE_DIR, "database.json")
+DB_BACKUP_FILE = os.path.join(BASE_DIR, "database.json.bak")
 _db_lock = Lock()
 
 def _load_db():
     if not os.path.exists(DB_FILE):
         return {}
-    with _db_lock, open(DB_FILE, "r", encoding="utf-8") as f:
-        try:
+    try:
+        with _db_lock, open(DB_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-        except Exception:
-            return {}
+    except Exception:
+        # バックアップから復元を試みる
+        if os.path.exists(DB_BACKUP_FILE):
+            try:
+                with open(DB_BACKUP_FILE, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                return {}
+        return {}
 
 def _save_db(data):
+    # 保存前にバックアップを作成
+    if os.path.exists(DB_FILE):
+        try:
+            shutil.copy2(DB_FILE, DB_BACKUP_FILE)
+        except Exception:
+            pass
     with _db_lock, open(DB_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
@@ -226,5 +244,69 @@ def create_optimized_topic_data(data_dict, max_length=1000):
         return encode_topic_json(optimized_data, max_length)
     except Exception as e:
         raise ValueError(f"最適化エラー: {str(e)}")
+
+# === APIキー管理 ===
+API_KEY_DB_KEY = "api_keys"
+_db_lock = Lock()
+
+# APIキーの期限切れ自動削除ループ
+_cleanup_thread = None
+def start_api_key_cleanup_loop(interval_sec=60):
+    global _cleanup_thread
+    if _cleanup_thread and _cleanup_thread.is_alive():
+        return  # すでに動作中
+    def cleanup_loop():
+        while True:
+            try:
+                db = _load_db()
+                api_keys = db.get(API_KEY_DB_KEY, {})
+                now = datetime.now()
+                to_delete = []
+                for k, v in list(api_keys.items()):
+                    try:
+                        expire = v["expire"]
+                        if isinstance(expire, str):
+                            expire = datetime.strptime(expire, "%Y-%m-%dT%H:%M:%S")
+                        if now > expire:
+                            to_delete.append(k)
+                    except Exception:
+                        continue
+                for k in to_delete:
+                    del api_keys[k]
+                if to_delete:
+                    db[API_KEY_DB_KEY] = api_keys
+                    _save_db(db)
+            except Exception:
+                pass
+            time.sleep(interval_sec)
+    _cleanup_thread = threading.Thread(target=cleanup_loop, daemon=True)
+    _cleanup_thread.start()
+
+def save_api_key(user_id, api_key, expire):
+    db = _load_db()
+    api_keys = db.setdefault(API_KEY_DB_KEY, {})
+    api_keys[api_key] = {
+        "user_id": user_id,
+        "expire": expire.strftime("%Y-%m-%dT%H:%M:%S")
+    }
+    _save_db(db)
+
+def get_api_key(api_key):
+    db = _load_db()
+    api_keys = db.get(API_KEY_DB_KEY, {})
+    info = api_keys.get(api_key)
+    if not info:
+        return None
+    # 期限をdatetime型で返す
+    info = info.copy()
+    info["expire"] = datetime.strptime(info["expire"], "%Y-%m-%dT%H:%M:%S")
+    return info
+
+def delete_api_key(api_key):
+    db = _load_db()
+    api_keys = db.get(API_KEY_DB_KEY, {})
+    if api_key in api_keys:
+        del api_keys[api_key]
+        _save_db(db)
 
 
