@@ -51,10 +51,12 @@ async def update_isBot_periodically():
     while True:
         # Botがオンラインかどうかを判定
         current = bot_instance is not None and bot_instance.is_ready()
+        bot_name = bot_instance.user.name if bot_instance and bot_instance.user else "Bot"
         now = datetime.now()
         # 10分ごとにパッチとして最新情報を保存
         isBot_patch = {
             'isBot': current,
+            'bot_name': bot_name,
             'timestamp': now.isoformat()
         }
         isBot = current
@@ -95,10 +97,8 @@ def status_rate_limiter(f):
     return decorated_function
 
 @app.route("/api/bot-status")
-@status_rate_limiter
 def api_bot_status():
     global bot_instance, bot_start_time, server_count, bot_status, isBot_patch
-
     uptime = ""
     if bot_start_time:
         uptime_delta = datetime.now() - bot_start_time
@@ -107,20 +107,16 @@ def api_bot_status():
         minutes, seconds = divmod(remainder, 60)
         uptime = f"{days}日 {hours:02d}:{minutes:02d}:{seconds:02d}"
 
-    bot_name = bot_instance.user.name if bot_instance and bot_instance.user else "Bot"
-
-    patch = isBot_patch if isBot_patch else {'isBot': False, 'timestamp': None}
-    return jsonify(
-        {
-            "bot_name": bot_name,
-            "status": bot_status,
-            "server_count": server_count,
-            "uptime": uptime,
-            "start_time": bot_start_time.isoformat() if bot_start_time else None,
-            "isBot": patch['isBot'],
-            "last_isBot_update": patch['timestamp'],
-        }
-    )
+    patch = isBot_patch if isBot_patch else {'isBot': False, 'bot_name': 'Bot', 'timestamp': None}
+    return jsonify({
+        "bot_name": patch['bot_name'],
+        "status": bot_status,
+        "server_count": server_count,
+        "uptime": uptime,
+        "start_time": bot_start_time.isoformat() if bot_start_time else None,
+        "isBot": patch['isBot'],
+        "last_isBot_update": patch['timestamp']
+    })
 
 def registerFlask(app, bot_instance):
     """
