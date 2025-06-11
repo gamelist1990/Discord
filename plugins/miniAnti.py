@@ -328,39 +328,13 @@ class MiniAnti:
             ".mkv",
         )
         media_count = 0
-        flashing_gif_found = False
         # 添付ファイルの判定
         for att in message.attachments:
             if any(att.filename.lower().endswith(ext) for ext in media_exts):
                 media_count += 1
-                if att.filename.lower().endswith('.gif'):
-                    if await is_flashing_gif(att):
-                        flashing_gif_found = True
-        # メッセージ本文のgif URLも判定
-        if hasattr(message, "content") and message.content:
-            import re
-            url_pattern = r'https?://\S+'
-            urls = re.findall(url_pattern, message.content)
-            for url in urls:
-                if await is_flashing_gif_from_url(url):
-                    flashing_gif_found = True
-        if media_count == 0 and not flashing_gif_found:
+        # メッセージ本文のgif URLも判定（点滅gif検出は廃止）
+        if media_count == 0:
             return False
-        if flashing_gif_found:
-            user_blocked_until[user_id] = now + BLOCK_DURATION
-            user_recent_messages[user_id] = []
-            user_image_timestamps[user_id] = []
-            try:
-                if hasattr(message.author, "timed_out_until"):
-                    until = discord.utils.utcnow() + timedelta(seconds=BLOCK_DURATION)
-                    await message.author.timeout(
-                        until, reason="miniAnti: 点滅gif検出"
-                    )
-                notifier = Notifier(message)
-                await notifier.purge_user_messages(alert_type="Flash_GIF")
-            except Exception:
-                pass
-            return True
         timestamps = user_image_timestamps.get(user_id, [])
         timestamps = [t for t in timestamps if now - t < IMAGE_SPAM_WINDOW]
         timestamps.extend([now] * media_count)
