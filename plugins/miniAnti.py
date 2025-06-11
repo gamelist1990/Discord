@@ -97,131 +97,153 @@ class Notifier:
         except Exception:
             pass
 
-async def check_and_block_spam(message):
-    # コマンドはスパム検知対象外（bypassロールもここで除外）
-    if hasattr(message, 'content') and message.content.startswith('#'):
-        from index import isCommand
-        cmd_name = message.content[1:].split()[0]
-        if isCommand(cmd_name):
-            return False
-    # bypassロール判定
-    if message.guild:
-        from DataBase import get_guild_value
-        bypass_role_id = get_guild_value(message.guild.id, "miniAntiBypassRole")
-        if bypass_role_id:
-            if any(r.id == bypass_role_id for r in getattr(message.author, 'roles', [])):
+class MiniAntiBypass:
+    @staticmethod
+    def should_bypass(message):
+        if message.guild:
+            from DataBase import get_guild_value
+            bypass_role_id = get_guild_value(message.guild.id, "miniAntiBypassRole")
+            if bypass_role_id:
+                try:
+                    bypass_role_id = int(bypass_role_id)
+                except Exception:
+                    pass
+                if any(getattr(r, 'id', None) == bypass_role_id for r in getattr(message.author, 'roles', [])):
+                    return True
+        return False
+
+class MiniAnti:
+    @staticmethod
+    async def check_and_block_spam(message):
+        # コマンドはスパム検知対象外（bypassロールもここで除外）
+        if hasattr(message, 'content') and message.content.startswith('#'):
+            from index import isCommand
+            cmd_name = message.content[1:].split()[0]
+            if isCommand(cmd_name):
                 return False
-    user_id = message.author.id
-    now = asyncio.get_event_loop().time()
-    # 直近の履歴で同じ内容・タイムスタンプが近すぎる場合のみ厳しく判定
-    history = user_recent_messages.get(user_id, [])
-    for old_msg in history:
-        # old_msgを(str, float)のタプルにして内容とタイムスタンプ両方で判定
-        if isinstance(old_msg, tuple):
-            old_content, old_time = old_msg
-        else:
-            old_content, old_time = old_msg, 0
-        ratio = difflib.SequenceMatcher(None, old_content, message.content).ratio()
-        # 2秒以内の連投かつ高類似度のみ厳しく
-        if ratio >= SIMILARITY_THRESHOLD and abs(now - old_time) < 2:
+        if MiniAntiBypass.should_bypass(message):
+            return False
+        user_id = message.author.id
+        now = asyncio.get_event_loop().time()
+        # 直近の履歴で同じ内容・タイムスタンプが近すぎる場合のみ厳しく判定
+        history = user_recent_messages.get(user_id, [])
+        for old_msg in history:
+            # old_msgを(str, float)のタプルにして内容とタイムスタンプ両方で判定
+            if isinstance(old_msg, tuple):
+                old_content, old_time = old_msg
+            else:
+                old_content, old_time = old_msg, 0
+            ratio = difflib.SequenceMatcher(None, old_content, message.content).ratio()
+            # 2秒以内の連投かつ高類似度のみ厳しく
+            if ratio >= SIMILARITY_THRESHOLD and abs(now - old_time) < 2:
+                user_blocked_until[user_id] = now + BLOCK_DURATION
+                user_recent_messages[user_id] = []
+                try:
+                    if hasattr(message.author, 'timed_out_until'):
+                        until = discord.utils.utcnow() + timedelta(seconds=BLOCK_DURATION)
+                        await message.author.timeout(until, reason="miniAnti: 類似スパム検出")
+                    notifier = Notifier(message)
+                    await notifier.purge_user_messages(alert_type="text")
+                except Exception:
+                    pass
+                return True
+        # 履歴に(内容,タイムスタンプ)で保存
+        history.append((message.content, now))
+        if len(history) > RECENT_MSG_COUNT:
+            history = history[-RECENT_MSG_COUNT:]
+        user_recent_messages[user_id] = history
+        return False
+
+    @staticmethod
+    async def check_and_block_media_spam(message):
+        if MiniAntiBypass.should_bypass(message):
+            return False
+        user_id = message.author.id
+        now = asyncio.get_event_loop().time()
+        # 画像・動画拡張子
+        media_exts = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".mp4", ".mov", ".avi", ".wmv", ".webm", ".mkv")
+        media_count = 0
+        for att in message.attachments:
+            if any(att.filename.lower().endswith(ext) for ext in media_exts):
+                media_count += 1
+        if media_count == 0:
+            return False
+        # 画像・動画共通のスパム判定
+        timestamps = user_image_timestamps.get(user_id, [])
+        timestamps = [t for t in timestamps if now - t < IMAGE_SPAM_WINDOW]
+        timestamps.extend([now] * media_count)
+        user_image_timestamps[user_id] = timestamps
+        if len(timestamps) >= IMAGE_SPAM_THRESHOLD:
             user_blocked_until[user_id] = now + BLOCK_DURATION
             user_recent_messages[user_id] = []
+            user_image_timestamps[user_id] = []
             try:
                 if hasattr(message.author, 'timed_out_until'):
                     until = discord.utils.utcnow() + timedelta(seconds=BLOCK_DURATION)
-                    await message.author.timeout(until, reason="miniAnti: 類似スパム検出")
+                    await message.author.timeout(until, reason="miniAnti: メディアスパム検出")
                 notifier = Notifier(message)
-                await notifier.purge_user_messages(alert_type="text")
-            except Exception as e:
+                await notifier.purge_user_messages(alert_type="image")
+            except Exception:
                 pass
             return True
-    # 履歴に(内容,タイムスタンプ)で保存
-    history.append((message.content, now))
-    if len(history) > RECENT_MSG_COUNT:
-        history = history[-RECENT_MSG_COUNT:]
-    user_recent_messages[user_id] = history
-    return False
-
-async def check_and_block_media_spam(message):
-    user_id = message.author.id
-    now = asyncio.get_event_loop().time()
-    # 画像・動画拡張子
-    media_exts = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".mp4", ".mov", ".avi", ".wmv", ".webm", ".mkv")
-    media_count = 0
-    for att in message.attachments:
-        if any(att.filename.lower().endswith(ext) for ext in media_exts):
-            media_count += 1
-    if media_count == 0:
         return False
-    # 画像・動画共通のスパム判定
-    timestamps = user_image_timestamps.get(user_id, [])
-    timestamps = [t for t in timestamps if now - t < IMAGE_SPAM_WINDOW]
-    timestamps.extend([now] * media_count)
-    user_image_timestamps[user_id] = timestamps
-    if len(timestamps) >= IMAGE_SPAM_THRESHOLD:
-        user_blocked_until[user_id] = now + BLOCK_DURATION
-        user_recent_messages[user_id] = []
-        user_image_timestamps[user_id] = []
-        try:
-            if hasattr(message.author, 'timed_out_until'):
-                until = discord.utils.utcnow() + timedelta(seconds=BLOCK_DURATION)
-                await message.author.timeout(until, reason="miniAnti: メディアスパム検出")
-            notifier = Notifier(message)
-            await notifier.purge_user_messages(alert_type="image")
-        except Exception:
-            pass
-        return True
-    return False
 
-async def check_and_block_mention_spam(message):
-    user_id = message.author.id
-    now = asyncio.get_event_loop().time()
-    mention_count = len(message.mentions)
-    # メンションがなければスルー
-    if mention_count == 0:
-        return False
-    timestamps = user_mention_timestamps.get(user_id, [])
-    timestamps = [t for t in timestamps if now - t < MENTION_SPAM_WINDOW]
-    timestamps.extend([now] * mention_count)
-    user_mention_timestamps[user_id] = timestamps
-    if len(timestamps) >= MENTION_SPAM_THRESHOLD:
-        user_blocked_until[user_id] = now + BLOCK_DURATION
-        user_recent_messages[user_id] = []
-        user_mention_timestamps[user_id] = []
-        try:
-            if hasattr(message.author, 'timed_out_until'):
-                until = discord.utils.utcnow() + timedelta(seconds=BLOCK_DURATION)
-                await message.author.timeout(until, reason="miniAnti: メンションスパム検出")
-            notifier = Notifier(message)
-            await notifier.purge_user_messages(alert_type="mention")
-        except Exception:
-            pass
-        return True
-    return False
-
-async def handle_griefing(message, alert_type="text"):
-    # blockword系のアラートDM送信は不要なので何もしない
-    if alert_type == "blockword":
-        return
-    notifier = Notifier(message)
-    await notifier.purge_user_messages(alert_type=alert_type)
-
-async def is_user_blocked(message):
-    user_id = message.author.id
-    now = asyncio.get_event_loop().time()
-    # タイムアウト中かどうかも判定
-    if user_id in user_blocked_until and now < user_blocked_until[user_id]:
-        # すでにタイムアウト中なら何もしない
-        if hasattr(message.author, 'timed_out_until') and message.author.timed_out_until:
+    @staticmethod
+    async def check_and_block_mention_spam(message):
+        if MiniAntiBypass.should_bypass(message):
+            return False
+        user_id = message.author.id
+        now = asyncio.get_event_loop().time()
+        mention_count = len(message.mentions)
+        # メンションがなければスルー
+        if mention_count == 0:
+            return False
+        timestamps = user_mention_timestamps.get(user_id, [])
+        timestamps = [t for t in timestamps if now - t < MENTION_SPAM_WINDOW]
+        timestamps.extend([now] * mention_count)
+        user_mention_timestamps[user_id] = timestamps
+        if len(timestamps) >= MENTION_SPAM_THRESHOLD:
+            user_blocked_until[user_id] = now + BLOCK_DURATION
+            user_recent_messages[user_id] = []
+            user_mention_timestamps[user_id] = []
+            try:
+                if hasattr(message.author, 'timed_out_until'):
+                    until = discord.utils.utcnow() + timedelta(seconds=BLOCK_DURATION)
+                    await message.author.timeout(until, reason="miniAnti: メンションスパム検出")
+                notifier = Notifier(message)
+                await notifier.purge_user_messages(alert_type="mention")
+            except Exception:
+                pass
             return True
-        # まだタイムアウトが付与されていなければ付与
-        try:
-            until = discord.utils.utcnow() + timedelta(seconds=int(user_blocked_until[user_id] - now))
-            await message.author.timeout(until, reason="miniAnti: スパム/荒らし検知による自動タイムアウト")
-        except Exception:
-            pass
-        return True
-    return False
+        return False
+
+    @staticmethod
+    async def is_user_blocked(message):
+        if MiniAntiBypass.should_bypass(message):
+            return False
+        user_id = message.author.id
+        now = asyncio.get_event_loop().time()
+        # タイムアウト中かどうかも判定
+        if user_id in user_blocked_until and now < user_blocked_until[user_id]:
+            # すでにタイムアウト中なら何もしない
+            if hasattr(message.author, 'timed_out_until') and message.author.timed_out_until:
+                return True
+            # まだタイムアウトが付与されていなければ付与
+            try:
+                until = discord.utils.utcnow() + timedelta(seconds=int(user_blocked_until[user_id] - now))
+                await message.author.timeout(until, reason="miniAnti: スパム/荒らし検知による自動タイムアウト")
+            except Exception:
+                pass
+            return True
+        return False
+
+    @staticmethod
+    async def handle_griefing(message, alert_type="text"):
+        # blockword系のアラートDM送信は不要なので何もしない
+        if alert_type == "blockword":
+            return
+        notifier = Notifier(message)
+        await notifier.purge_user_messages(alert_type=alert_type)
 
 def setup(bot):
     @bot.listen('on_message')
@@ -229,34 +251,34 @@ def setup(bot):
         if message.author.bot or not message.guild:
             return
         # ブロック中ならタイムアウトを活用し削除
-        if await is_user_blocked(message):
+        if await MiniAnti.is_user_blocked(message):
             try:
                 await message.delete()
             except:
                 pass
             return
         # 画像・動画スパム判定
-        media_blocked = await check_and_block_media_spam(message)
+        media_blocked = await MiniAnti.check_and_block_media_spam(message)
         if media_blocked:
-            await handle_griefing(message, alert_type="image")
+            await MiniAnti.handle_griefing(message, alert_type="image")
             try:
                 await message.delete()
             except:
                 pass
             return
         # メンションスパム判定
-        mention_blocked = await check_and_block_mention_spam(message)
+        mention_blocked = await MiniAnti.check_and_block_mention_spam(message)
         if mention_blocked:
-            await handle_griefing(message, alert_type="mention")
+            await MiniAnti.handle_griefing(message, alert_type="mention")
             try:
                 await message.delete()
             except:
                 pass
             return
         # テキストスパム判定（類似性）
-        blocked = await check_and_block_spam(message)
+        blocked = await MiniAnti.check_and_block_spam(message)
         if blocked:
-            await handle_griefing(message, alert_type="text")
+            await MiniAnti.handle_griefing(message, alert_type="text")
             try:
                 await message.delete()
             except:
@@ -322,28 +344,8 @@ def setup(bot):
             await ctx.send(f"✅ ユーザーID `{user_id}` のblock/タイムアウトを解除しました。", delete_after=10)
             return
         if not subcmd:
-            await ctx.send("`#minianti settings` または `#minianti docs` を指定してください。", delete_after=10)
+            await ctx.send("`#minianti docs` を指定してください。", delete_after=10)
             return
-        if subcmd.lower() == "settings":
-            from plugins.common_ui import ModalInputView
-            embed = discord.Embed(
-                title="miniAnti 現在の設定 (閲覧専用)",
-                color=0x4ade80
-            )
-            embed.add_field(name="類似メッセージしきい値", value=str(SIMILARITY_THRESHOLD), inline=False)
-            embed.add_field(name="履歴保持数", value=str(RECENT_MSG_COUNT), inline=False)
-            embed.add_field(name="スパムブロック時間(秒)", value=str(BLOCK_DURATION), inline=False)
-            embed.add_field(name="画像・動画スパムしきい値", value=str(IMAGE_SPAM_THRESHOLD), inline=False)
-            embed.add_field(name="画像・動画スパム判定ウィンドウ(秒)", value=str(IMAGE_SPAM_WINDOW), inline=False)
-            embed.add_field(name="メンションスパムしきい値", value=str(MENTION_SPAM_THRESHOLD), inline=False)
-            embed.add_field(name="メンションスパム判定ウィンドウ(秒)", value=str(MENTION_SPAM_WINDOW), inline=False)
-            embed.set_footer(text="miniAnti v1.0")
-            view = ModalInputView(
-                label="Mini Anti v 1.0",
-                on_button=lambda i, v: i.response.send_message("このBotは設定変更機能を提供しません。", ephemeral=True),
-                button_disabled=True
-            )
-            await ctx.send(embed=embed, view=view)
         elif subcmd.lower() == "docs":
             embed = discord.Embed(
                 title="miniAnti 機能説明",
@@ -372,5 +374,5 @@ def setup(bot):
             embed.set_footer(text="miniAnti v1.0 | どなたでも閲覧可能です。詳細は管理者まで")
             await ctx.send(embed=embed)
         else:
-            await ctx.send("`settings` または `docs` を指定してください。", delete_after=10)
+            await ctx.send("`docs` を指定してください。", delete_after=10)
 
