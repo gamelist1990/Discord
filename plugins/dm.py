@@ -291,7 +291,7 @@ def setup(bot):
                         online_statuses = [discord.Status.online, discord.Status.idle, discord.Status.dnd]
                         online_members = [
                             m for m in ctx.guild.members
-                            if m.status in online_statuses and not m.bot and m != ctx.author
+                            if (getattr(m, 'status', None) in online_statuses) and not m.bot and m != ctx.author
                         ]
                         # Fallback: オンライン0人なら全メンバーからbot/自分以外を候補に
                         if not online_members:
