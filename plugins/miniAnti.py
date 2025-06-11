@@ -6,9 +6,7 @@ from datetime import timedelta
 import re
 import tempfile
 import aiohttp
-from PIL import Image
 import urllib.parse
-import numpy as np
 
 # 類似メッセージのしきい値
 SIMILARITY_THRESHOLD = 0.85
@@ -148,57 +146,6 @@ def is_random_spam(text):
         if v_count / len(text) < 0.2:
             return True
     return False
-
-
-async def is_flashing_gif(attachment, threshold=60, min_flashes=3, resize_to=(64, 64)):
-    """
-    attachment: discord.Attachment (gif)
-    threshold: 輝度差のしきい値
-    min_flashes: 点滅とみなす回数
-    resize_to: 計算軽減のためのリサイズサイズ
-    """
-    return await is_flashing_gif_from_url(attachment.url, threshold, min_flashes, resize_to)
-
-
-async def is_flashing_gif_from_url(url, threshold=60, min_flashes=3, resize_to=(64, 64)):
-    """
-    url: gif画像のURL
-    threshold: 輝度差のしきい値
-    min_flashes: 点滅とみなす回数
-    resize_to: 計算軽減のためのリサイズサイズ
-    """
-    # gif拡張子またはクエリ付きgifも許可
-    parsed = urllib.parse.urlparse(url)
-    if not (parsed.path.lower().endswith('.gif') or '.gif' in parsed.path.lower()):
-        return False
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
-                if resp.status != 200:
-                    return False
-                with tempfile.NamedTemporaryFile(suffix='.gif', delete=True) as tmp:
-                    tmp.write(await resp.read())
-                    tmp.flush()
-                    im = Image.open(tmp.name)
-                    prev_lum = None
-                    flashes = 0
-                    try:
-                        frame_count = 0
-                        while True:
-                            im.seek(frame_count)
-                            # 軽量化: リサイズしてからグレースケール
-                            small = im.convert('L').resize(resize_to)
-                            lum = sum(small.getdata()) / (small.width * small.height)
-                            if prev_lum is not None:
-                                if abs(lum - prev_lum) > threshold:
-                                    flashes += 1
-                            prev_lum = lum
-                            frame_count += 1
-                    except EOFError:
-                        pass
-                    return flashes >= min_flashes
-    except Exception:
-        return False
 
 
 class MiniAnti:
@@ -414,16 +361,25 @@ class MiniAnti:
             return False
 
         # 送信間隔リスト
-        intervals = np.diff(times)
-        if not intervals.any() or intervals.min() <= 0:
+        intervals = [t2 - t1 for t1, t2 in zip(times[:-1], times[1:])]
+        if not intervals or min(intervals) <= 0:
             return False
 
         # 分散計算
-        var = np.var(intervals)
+        mean = sum(intervals) / len(intervals)
+        var = sum((x - mean) ** 2 for x in intervals) / len(intervals)
 
         # ヒストグラム（0.5秒幅でbinning）
-        bins = np.histogram(intervals, bins=np.arange(0, 3.5, 0.5))[0]
-        max_bin_ratio = bins.max() / len(intervals)
+        bin_edges = [0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
+        bins = [0] * (len(bin_edges))
+        for interval in intervals:
+            for i, edge in enumerate(bin_edges):
+                if interval < edge:
+                    bins[i] += 1
+                    break
+            else:
+                bins[-1] += 1
+        max_bin_ratio = max(bins) / len(intervals)
 
         # 連続検知カウンタ
         if not hasattr(MiniAnti, '_timebase_detect_count'):
