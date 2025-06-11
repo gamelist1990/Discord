@@ -8,6 +8,7 @@ import tempfile
 import aiohttp
 from PIL import Image
 import urllib.parse
+import numpy as np
 
 # 類似メッセージのしきい値
 SIMILARITY_THRESHOLD = 0.85
@@ -413,54 +414,65 @@ class MiniAnti:
         return False
 
     @staticmethod
-    async def check_and_block_timebase_spam(message, interval_count=8, min_msgs=8, var_threshold=0.15, hist_threshold=0.7, max_history=10):
+    async def check_and_block_timebase_spam(message, min_msgs=8, var_threshold=0.15, hist_threshold=0.7, max_history=15, reset_interval=60):
         """
         interval_count: 直近何件の間隔で判定するか
         min_msgs: 判定に必要な最小メッセージ数
         var_threshold: 分散がこの値未満なら周期的とみなす
         hist_threshold: 1binに偏る割合がこの値以上なら周期的とみなす
         max_history: 履歴保存上限
+        reset_interval: リセット間隔（秒）
         """
         user_id = message.author.id
         now = asyncio.get_event_loop().time()
         times = user_time_intervals.get(user_id, [])
+
+        # リセット機構: 最後のメッセージから一定時間経過した場合、履歴をリセット
+        if times and now - times[-1] > reset_interval:
+            times = []
+
         times.append(now)
         if len(times) > max_history:
             times = times[-max_history:]
         user_time_intervals[user_id] = times
+
         if len(times) < min_msgs:
             return False
+
         # 送信間隔リスト
-        intervals = [t2 - t1 for t1, t2 in zip(times[:-1], times[1:])]
-        if not intervals or min(intervals) <= 0:
+        intervals = np.diff(times)
+        if not intervals.any() or intervals.min() <= 0:
             return False
-        # 分散
-        mean = sum(intervals) / len(intervals)
-        var = sum((x - mean) ** 2 for x in intervals) / len(intervals)
+
+        # 分散計算
+        var = np.var(intervals)
+
         # ヒストグラム（0.5秒幅でbinning）
-        bins = [0] * 6  # 0-0.5, 0.5-1, 1-1.5, ... 2.5-3+
-        for iv in intervals:
-            idx = min(int(iv / 0.5), len(bins) - 1)
-            bins[idx] += 1
-        max_bin_ratio = max(bins) / len(intervals)
+        bins = np.histogram(intervals, bins=np.arange(0, 3.5, 0.5))[0]
+        max_bin_ratio = bins.max() / len(intervals)
+
         # 連続検知カウンタ
         if not hasattr(MiniAnti, '_timebase_detect_count'):
             MiniAnti._timebase_detect_count = {}
         detect_count = MiniAnti._timebase_detect_count.get(user_id, 0)
+
         # 判定
         if var < var_threshold or max_bin_ratio > hist_threshold:
             detect_count += 1
         else:
             detect_count = 0  # 連続でなければリセット
         MiniAnti._timebase_detect_count[user_id] = detect_count
+
         # 1回目は許容、2回目で警告
         if detect_count < 2:
             return False
+
         # 2回目以降は通常通りスパム処理
         user_blocked_until[user_id] = now + BLOCK_DURATION
         user_recent_messages[user_id] = []
         user_time_intervals[user_id] = []
         MiniAnti._timebase_detect_count[user_id] = 0  # 検知カウンタリセット
+
         try:
             if hasattr(message.author, "timed_out_until"):
                 until = discord.utils.utcnow() + timedelta(seconds=BLOCK_DURATION)
@@ -469,6 +481,7 @@ class MiniAnti:
             await notifier.purge_user_messages(alert_type="timebase")
         except Exception:
             pass
+
         return True
 
     @staticmethod
