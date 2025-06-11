@@ -5,6 +5,7 @@ import discord
 import asyncio
 import re
 from index import load_config, is_admin
+from datetime import datetime, timedelta
 
 # 臨時DM管理用カテゴリ名
 DM_CATEGORY_NAME = "📥｜ DM"
@@ -66,9 +67,10 @@ def extract_dm_user_ids(topic):
 
 
 # --- DM自動削除ループ ---
-@tasks.loop()
-async def auto_delete_offline_dm_channels_task(bot, interval):
+@tasks.loop(minutes=5)
+async def auto_delete_expired_dm_channels_task(bot):
     try:
+        now = datetime.utcnow()
         for guild in bot.guilds:
             cat = None
             for c in guild.categories:
@@ -78,24 +80,22 @@ async def auto_delete_offline_dm_channels_task(bot, interval):
             if not cat:
                 continue
             for ch in list(cat.text_channels):
-                uid1, uid2 = extract_dm_user_ids(ch.topic)
-                if not uid1 or not uid2:
-                    continue
-                m1 = guild.get_member(uid1)
-                m2 = guild.get_member(uid2)
-                if not m1 or not m2:
-                    continue
-                if (
-                    m1.status == discord.Status.offline
-                    or m2.status == discord.Status.offline
-                ):
-                    try:
-                        await ch.delete(reason="どちらかの参加者が本当にオフラインのため自動削除")
-                    except Exception as e:
-                        print(f"[DM自動削除] 削除失敗: {e}")
+                # topicから作成時刻を抽出
+                if ch.topic and ch.topic.startswith("臨時DM: "):
+                    # topic例: "臨時DM: <author_id> <-> <target_id> | created: <timestamp>"
+                    parts = ch.topic.split("| created: ")
+                    if len(parts) == 2:
+                        try:
+                            created_at = datetime.fromisoformat(parts[1].strip())
+                        except Exception:
+                            continue
+                        if now - created_at > timedelta(hours=1):
+                            try:
+                                await ch.delete(reason="臨時DM: 1時間経過による自動削除")
+                            except Exception as e:
+                                print(f"[DM自動削除] 削除失敗: {e}")
     except Exception as e:
         print(f"[DM自動削除] ループ例外: {e}")
-    await asyncio.sleep(interval)
 
 
 # 臨時DMコマンド
@@ -448,7 +448,7 @@ def setup(bot):
                             name=f"dm-{ctx.author.display_name}-{target.display_name}",
                             category=cat,
                             overwrites=overwrites,
-                            topic=f"臨時DM: {ctx.author.id} <-> {target.id}",
+                            topic=f"臨時DM: {ctx.author.id} <-> {target.id} | created: {datetime.utcnow().isoformat()}",
                         )
                         await set_external_app_commands_permission(ch, ctx.author)
                         await set_external_app_commands_permission(ch, target)
@@ -529,7 +529,7 @@ def setup(bot):
             name=f"dm-{ctx.author.display_name}-{target.display_name}",
             category=cat,
             overwrites=overwrites,
-            topic=f"臨時DM: {ctx.author.id} <-> {target.id}",
+            topic=f"臨時DM: {ctx.author.id} <-> {target.id} | created: {datetime.utcnow().isoformat()}",
         )
         await set_external_app_commands_permission(ch, ctx.author)
         await set_external_app_commands_permission(ch, target)
@@ -538,7 +538,7 @@ def setup(bot):
     register_command(bot, dm, aliases=None, admin=False)
     # tasks.loopで自動削除タスクを起動
     if not hasattr(bot, "_auto_delete_dm_started"):
-        auto_delete_offline_dm_channels_task.start(bot, 30)
+        auto_delete_expired_dm_channels_task.start(bot)
         bot._auto_delete_dm_started = True
 
 
@@ -546,6 +546,7 @@ def create_dm_channel(ctx, author, target, interaction=None):
     """
     DMチャンネル作成処理（UIからも直接呼び出し可能）
     """
+    from datetime import datetime
 
     async def inner():
         # DM作成数制限チェック
@@ -579,7 +580,7 @@ def create_dm_channel(ctx, author, target, interaction=None):
             name=f"dm-{author.display_name}-{target.display_name}",
             category=cat,
             overwrites=overwrites,
-            topic=f"臨時DM: {author.id} <-> {target.id}",
+            topic=f"臨時DM: {author.id} <-> {target.id} | created: {datetime.utcnow().isoformat()}",
         )
         await set_external_app_commands_permission(ch, author)
         await set_external_app_commands_permission(ch, target)
