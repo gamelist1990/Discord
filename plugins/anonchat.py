@@ -12,18 +12,24 @@ class AnonChatModal(discord.ui.Modal):
         self.message_input = discord.ui.TextInput(
             label="送信する内容",
             placeholder="ここに匿名で送りたい内容を入力...",
-            style=discord.TextStyle.paragraph,
+            style=discord.TextStyle.short,  # 一言コメント用
             required=True,
-            max_length=500
+            max_length=100
         )
         self.add_item(self.message_input)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        # 匿名でメッセージを送信（PEXserver名義で）
+        # 入力値の整形：改行除去・連続空白を1つに
+        text = self.message_input.value.replace('\n', ' ')
+        import re
+        text = re.sub(r'\s{2,}', ' ', text).strip()
+        if not text:
+            await interaction.followup.send("❌ 空のメッセージは送信できません。", ephemeral=True)
+            return
         channel = self.ctx.channel
         try:
-            await channel.send(f"【匿名メッセージ】\n{self.message_input.value}")
+            await channel.send(f"【匿名メッセージ】\n{text}")
             await interaction.followup.send("✅ 匿名でメッセージを送信しました。", ephemeral=True)
         except Exception:
             await interaction.followup.send("❌ 送信に失敗しました。", ephemeral=True)
