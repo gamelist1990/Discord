@@ -297,30 +297,64 @@ def main():
             return
         user_id = str(message.author.id)
         now = datetime.now()
-        # レートリミット解除
-        expiry = rate_limited_users.get(user_id)
-        if expiry and now < expiry:
-            return
-        elif expiry:
-            del rate_limited_users[user_id]
-            user_command_timestamps[user_id].clear()
-            print(f"✅ レート制限解除: {message.author} ({user_id})")
-        timestamps = user_command_timestamps[user_id]
-        timestamps.append(now)
-        recent = [
-            t for t in timestamps if (now - t).total_seconds() < RATE_LIMIT_WINDOW
-        ]
-        if len(recent) >= RATE_LIMIT_COUNT:
-            rate_limited_users[user_id] = now + timedelta(seconds=RATE_LIMIT_DURATION)
-            user_command_timestamps[user_id].clear()
-            print(f"🚫 レート制限適用: {message.author} ({user_id})")
-            try:
-                await message.author.send(
-                    "⚠️ コマンドを短時間に送信しすぎたため、一時的に制限されました。約30分後に解除されます。"
-                )
-            except:
-                pass
-            return
+        # コマンド名取得
+        cmd_name = message.content[1:].split()[0] if message.content.startswith(PREFIX) else ""
+        from index import isCommand
+        is_cmd = isCommand(cmd_name)
+        # コマンド使用時のレート制限（厳しめ）
+        if is_cmd:
+            expiry = rate_limited_users.get(user_id)
+            if expiry and now < expiry:
+                # 1分間timeout
+                try:
+                    until = discord.utils.utcnow() + timedelta(seconds=60)
+                    await message.author.timeout(until, reason="コマンド連投による自動タイムアウト(1分)")
+                except Exception:
+                    pass
+                return
+            elif expiry:
+                del rate_limited_users[user_id]
+                user_command_timestamps[user_id].clear()
+            timestamps = user_command_timestamps[user_id]
+            timestamps.append(now)
+            recent = [t for t in timestamps if (now - t).total_seconds() < RATE_LIMIT_WINDOW]
+            if len(recent) >= RATE_LIMIT_COUNT:
+                rate_limited_users[user_id] = now + timedelta(seconds=60)  # 1分
+                user_command_timestamps[user_id].clear()
+                try:
+                    await message.author.send(
+                        "⚠️ コマンドを短時間に送信しすぎたため、1分間タイムアウトされました。"
+                    )
+                except:
+                    pass
+                # 1分間timeout
+                try:
+                    until = discord.utils.utcnow() + timedelta(seconds=60)
+                    await message.author.timeout(until, reason="コマンド連投による自動タイムアウト(1分)")
+                except Exception:
+                    pass
+                return
+        else:
+            # 通常のレートリミット
+            expiry = rate_limited_users.get(user_id)
+            if expiry and now < expiry:
+                return
+            elif expiry:
+                del rate_limited_users[user_id]
+                user_command_timestamps[user_id].clear()
+            timestamps = user_command_timestamps[user_id]
+            timestamps.append(now)
+            recent = [t for t in timestamps if (now - t).total_seconds() < RATE_LIMIT_WINDOW]
+            if len(recent) >= RATE_LIMIT_COUNT:
+                rate_limited_users[user_id] = now + timedelta(seconds=RATE_LIMIT_DURATION)
+                user_command_timestamps[user_id].clear()
+                try:
+                    await message.author.send(
+                        "⚠️ コマンドを短時間に送信しすぎたため、一時的に制限されました。約30分後に解除されます。"
+                    )
+                except:
+                    pass
+                return
         await bot.process_commands(message)
 
     @bot.event
@@ -361,9 +395,6 @@ def main():
 def isCommand(cmd_name):
     global bot_instance
     # 先頭の#を除去
-    if cmd_name.startswith('#'):
-        cmd_name = cmd_name[1:]
-    # Botのコマンド名一覧（help.pyのhelpコマンドと同じ方式）
     if bot_instance and hasattr(bot_instance, 'commands'):
         return any(c.name == cmd_name for c in bot_instance.commands)
     return False

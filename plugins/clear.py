@@ -24,7 +24,8 @@ def setup(bot):
             deleted_total = 0
             for channel in guild.text_channels:
                 try:
-                    deleted = await channel.purge(limit=100)
+                    # botのメッセージも含めて全て削除（checkは常にTrueを返す関数を指定）
+                    deleted = await channel.purge(limit=100, check=lambda m: True)
                     deleted_total += len(deleted)
                 except Exception:
                     pass
@@ -51,6 +52,7 @@ def setup(bot):
         async def safe_bulk_delete(messages, interval=0.6):
             """
             メッセージリストを1件ずつinterval秒間隔で削除（Discordレートリミット対策）
+            botのメッセージも含めて削除
             """
             import asyncio
             deleted_count = 0
