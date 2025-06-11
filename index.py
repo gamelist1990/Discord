@@ -358,5 +358,12 @@ def main():
     bot.run(token)
 
 
+def isCommand(cmd_name):
+    global bot_instance
+    if bot_instance and hasattr(bot_instance, 'get_command'):
+        return bot_instance.get_command(cmd_name) is not None
+    return False
+
+
 if __name__ == "__main__":
     main()

@@ -4,6 +4,7 @@ from discord.ext import commands
 import discord
 from datetime import timedelta
 import re
+from index import isCommand
 
 # 類似メッセージのしきい値
 SIMILARITY_THRESHOLD = 0.85
@@ -106,7 +107,16 @@ class Notifier:
         except Exception:
             pass
 
+def is_command_message(message):
+    # コマンド判定: 先頭が#で、isCommandで有効か判定
+    if message.content.startswith('#'):
+        cmd_name = message.content[1:].split()[0]
+        return isCommand(cmd_name)
+    return False
+
 async def check_and_block_spam(message):
+    if is_command_message(message):
+        return False  # 有効なコマンドはスパム検知から除外
     user_id = message.author.id
     now = asyncio.get_event_loop().time()
     if user_id in user_blocked_until and now < user_blocked_until[user_id]:
