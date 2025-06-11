@@ -204,7 +204,7 @@ def setup(bot):
                     description="有効/無効を選択してください",
                     color=0x5865f2
                 ),
-                view=PermissionConfirmView(self.ctx, self.author_id, self.target_role, "create_vote", "投票の作成"),
+                view=PermissionConfirmView(self.ctx, self.author_id, self.target_role, "create_polls", "投票の作成"),
                 ephemeral=True
             )
 
@@ -304,7 +304,7 @@ def setup(bot):
                 )
                 await interaction.edit_original_response(content=None, embed=embed, view=None)
 
-        async def _set_channel_permission(self, channel, value, failed_channels):
+        async def _set_channel_permission(self, channel: discord.abc.GuildChannel, value: bool, failed_channels: list):
             try:
                 overwrite = channel.overwrites_for(self.target_role)
                 setattr(overwrite, self.permission_name, value)
