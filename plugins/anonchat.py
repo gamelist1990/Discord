@@ -35,6 +35,10 @@ def setup(bot):
         """
         #tell ...匿名でこのチャンネルにメッセージを送信できます
         """
+        try:
+            await ctx.message.delete()
+        except Exception:
+            pass
         embed = discord.Embed(
             title="匿名チャット",
             description="下のボタンから匿名メッセージを送信できます。",
