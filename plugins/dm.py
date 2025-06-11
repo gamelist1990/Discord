@@ -115,6 +115,7 @@ def setup(bot):
                 title="臨時DM UI",
                 description="下のボタンから操作を開始してください",
                 color=0x4ADE80,
+                
             )
 
             async def on_dm_ui_button(interaction, view):
@@ -144,11 +145,12 @@ def setup(bot):
 
                             async def on_submit(self, interaction3):
                                 await interaction3.response.defer(ephemeral=True)
-                                members = [m for m in await search_members(ctx, self.search_word.value)
-                                           if m.status != discord.Status.offline and not m.bot and m != ctx.author]
+                                members = await search_members(
+                                    ctx, self.search_word.value
+                                )
                                 if not members:
                                     await interaction3.followup.send(
-                                        "❌ オンラインの該当ユーザーが見つかりません",
+                                        "❌ 該当ユーザーが見つかりません",
                                         ephemeral=True,
                                     )
                                     return
@@ -212,7 +214,7 @@ def setup(bot):
                                         )
                                     )
                                 embed = discord.Embed(
-                                    title="ユーザー候補リスト (オンラインのみ)",
+                                    title="ユーザー候補リスト",
                                     description=desc,
                                     color=0xFBBF24,
                                 )
@@ -280,6 +282,96 @@ def setup(bot):
                                 )
 
                         await interaction2.response.send_modal(SearchModal())
+
+                    @discord.ui.button(
+                        label="ユーザー選択", style=discord.ButtonStyle.secondary
+                    )
+                    async def select_btn(self, interaction2, button):
+                        # オンライン・アクティブなユーザーSelectを表示（idle/dnd含む）
+                        online_statuses = [discord.Status.online, discord.Status.idle, discord.Status.dnd]
+                        online_members = [
+                            m for m in ctx.guild.members
+                            if m.status in online_statuses and not m.bot and m != ctx.author
+                        ]
+                        # Fallback: オンライン0人なら全メンバーからbot/自分以外を候補に
+                        if not online_members:
+                            online_members = [
+                                m for m in ctx.guild.members
+                                if not m.bot and m != ctx.author
+                            ]
+                            if not online_members:
+                                await interaction2.response.send_message(
+                                    "❌ 選択可能なユーザーがいません", ephemeral=True
+                                )
+                                return
+                            info = "（全メンバーから選択）"
+                        else:
+                            info = ""
+                        options = [
+                            discord.SelectOption(
+                                label=f"{m.display_name} ({m.name})", value=str(m.id)
+                            )
+                            for m in online_members[:25]
+                        ]
+
+                        class UserSelect(discord.ui.Select):
+                            def __init__(self):
+                                super().__init__(
+                                    placeholder="DM相手を選択...", options=options
+                                )
+
+                            async def callback(self, interaction):
+                                target_id = int(self.values[0])
+                                target = ctx.guild.get_member(target_id)
+                                # 確認Embed＋はい/いいえView
+                                embed = discord.Embed(
+                                    title="DM開始確認",
+                                    description=f"このユーザーとDMを開始しますか？\n\n{target.mention}",
+                                    color=0x4ADE80,
+                                )
+
+                                class ConfirmView(discord.ui.View):
+                                    def __init__(self):
+                                        super().__init__(timeout=30)
+
+                                    @discord.ui.button(
+                                        label="はい", style=discord.ButtonStyle.success
+                                    )
+                                    async def yes(self, i, b):
+                                        await i.response.defer(ephemeral=True)
+                                        await create_dm_channel(
+                                            ctx, ctx.author, target, i
+                                        )
+                                        try:
+                                            await i.message.delete()
+                                        except discord.NotFound:
+                                            pass
+                                        self.stop()
+
+                                    @discord.ui.button(
+                                        label="いいえ", style=discord.ButtonStyle.danger
+                                    )
+                                    async def no(self, i, b):
+                                        await i.response.send_message(
+                                            "キャンセルしました", ephemeral=True
+                                        )
+                                        try:
+                                            await i.message.delete()
+                                        except discord.NotFound:
+                                            pass
+                                        self.stop()
+
+                                await interaction.response.send_message(
+                                    embed=embed, view=ConfirmView(), ephemeral=True
+                                )
+
+                        view2 = discord.ui.View(timeout=60)
+                        view2.add_item(UserSelect())
+                        await interaction2.response.send_message(
+                            f"DM相手を選択してください {info}",
+                            view=view2,
+                            ephemeral=True,
+                        )
 
                 # --- ここから共通確認UI ---
                 async def show_dm_confirm(ctx, interaction, target):
@@ -402,45 +494,8 @@ def setup(bot):
                 await ctx.send("❌ このコマンドは臨時DMチャンネル内でのみ有効です")
             return
         # 検索: ユーザー名/ID
-        # --- この機能は削除 ---
-        members = await search_members(ctx, query)
-        if not members:
-            await ctx.send("❌ 該当ユーザーが見つかりません")
-            return
-        target = members[0]
-        # DM作成数制限チェック
-        user_dm_count = await count_user_dm_channels(ctx.guild, ctx.author)
-        if user_dm_count >= 2:
-            await ctx.send("❌ あなたが作成できる臨時DMチャンネルは2個までです")
-            return
-        cat = await get_or_create_dm_category(ctx.guild)
-        # 既存DMチャンネル探索
-        for ch in cat.text_channels:
-            if (
-                ch.topic
-                and str(target.id) in ch.topic
-                and str(ctx.author.id) in ch.topic
-            ):
-                await ctx.send(f"既にDMチャンネルが存在します: {ch.mention}")
-                return
-        # 新規DMチャンネル作成
-        overwrites = {
-            ctx.guild.default_role: discord.PermissionOverwrite(read_messages=False),
-            ctx.author: discord.PermissionOverwrite(
-                read_messages=True, send_messages=True
-            ),
-            target: discord.PermissionOverwrite(read_messages=True, send_messages=True),
-        }
-        ch = await ctx.guild.create_text_channel(
-            name=f"dm-{ctx.author.display_name}-{target.display_name}",
-            category=cat,
-            overwrites=overwrites,
-            topic=f"臨時DM: {ctx.author.id} <-> {target.id} | created: {datetime.utcnow().isoformat()}",
-        )
-        await set_external_app_commands_permission(ch, ctx.author)
-        await set_external_app_commands_permission(ch, target)
-        await ctx.send(f"✅ 臨時DMチャンネルを作成しました: {ch.mention}")
-
+        await ctx.send("❌ #dm <検索語> でのユーザー検索機能は廃止されました。ボタンUIから選択してください。")
+        return
     register_command(bot, dm, aliases=None, admin=False)
     # tasks.loopで自動削除タスクを起動
     if not hasattr(bot, "_auto_delete_dm_started"):
@@ -498,38 +553,3 @@ def create_dm_channel(ctx, author, target, interaction=None):
             await ctx.send(f"✅ 臨時DMチャンネルを作成しました: {ch.mention}")
 
     return asyncio.create_task(inner())
-
-
-# --- ここから下を追加 ---
-    @commands.command()
-    async def timeleft(ctx, *, query=None):
-        """
-        #timeleft ...このDMチャンネルの自動削除までの残り時間を表示
-        """
-        if query and query.strip().lower() == "timeleft":
-            # 臨時DMチャンネルの残り時間を表示
-            if not ctx.channel.category or ctx.channel.category.name != DM_CATEGORY_NAME:
-                await ctx.send("❌ このコマンドは臨時DMチャンネル内でのみ有効です")
-                return
-            topic = ctx.channel.topic or ""
-            parts = topic.split("| created: ")
-            if len(parts) == 2:
-                try:
-                    created_at = datetime.fromisoformat(parts[1].strip())
-                    now = datetime.utcnow()
-                    elapsed = (now - created_at).total_seconds() // 60  # 分
-                    remaining = int(60 - elapsed)
-                    if remaining < 0:
-                        remaining = 0
-                    embed = discord.Embed(
-                        title="⏳ このDMチャンネルの残り時間",
-                        description=f"自動削除まであと **{remaining}分** です。\n(作成: {created_at.strftime('%Y-%m-%d %H:%M:%S UTC')})",
-                        color=0x60a5fa,
-                    )
-                    await ctx.send(embed=embed)
-                except Exception:
-                    await ctx.send("⚠️ 作成時刻の取得に失敗しました。管理者にご連絡ください。")
-            else:
-                await ctx.send("⚠️ このチャンネルは作成時刻情報がありません。管理者にご連絡ください。")
-            return
-        # 既存の処理...
