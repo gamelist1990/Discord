@@ -112,6 +112,22 @@ class MiniAntiBypass:
                     return True
         return False
 
+def is_random_spam(text):
+    import re
+    if len(text) > 20:
+        non_jp = re.sub(r'[\u3040-\u30ff\u4e00-\u9fff]', '', text)
+        if len(non_jp) / len(text) > 0.8:
+            return True
+        if re.fullmatch(r'(.)\1{7,}', text) or re.fullmatch(r'(..)(\1){5,}', text):
+            return True
+        if re.fullmatch(r'[A-Za-z0-9]{15,}', text):
+            return True
+        vowels = 'aeiouあいうえお'
+        v_count = sum(1 for c in text if c in vowels)
+        if v_count / len(text) < 0.2:
+            return True
+    return False
+
 class MiniAnti:
     @staticmethod
     async def check_and_block_spam(message):
@@ -152,6 +168,23 @@ class MiniAnti:
         if len(history) > RECENT_MSG_COUNT:
             history = history[-RECENT_MSG_COUNT:]
         user_recent_messages[user_id] = history
+
+        # ランダム・意味不明スパム検知
+        if hasattr(message, 'content') and is_random_spam(message.content):
+            user_id = message.author.id
+            now = asyncio.get_event_loop().time()
+            user_blocked_until[user_id] = now + BLOCK_DURATION
+            user_recent_messages[user_id] = []
+            try:
+                if hasattr(message.author, 'timed_out_until'):
+                    until = discord.utils.utcnow() + timedelta(seconds=BLOCK_DURATION)
+                    await message.author.timeout(until, reason="miniAnti: ランダムスパム検出")
+                notifier = Notifier(message)
+                await notifier.purge_user_messages(alert_type="randomspam")
+            except Exception:
+                pass
+            return True
+
         return False
 
     @staticmethod
@@ -288,12 +321,14 @@ def setup(bot):
     @bot.command()
     async def minianti(ctx, subcmd: str = "", arg: str = ""):
         """
-        miniAntiの設定やドキュメントを表示するコマンド
+        miniAntiの設定・管理コマンド
         #minianti settings: 現在の設定をEmbedで表示
         #minianti docs: 各種機能の説明をEmbedで表示
-        #minianti bypass <roleID>: 指定ロールをbypass（スパム判定除外）に設定（サーバーごと/管理者のみ）
+        #minianti bypass <roleID>: 指定ロールをbypass（スパム判定除外）に設定（管理者のみ）
         #minianti unblock <ユーザーID>: 指定ユーザーのblock/タイムアウトを解除（管理者のみ）
-        (管理者以外も利用可能/設定変更機能は今後も実装しません)
+        #minianti block <ユーザーID> <期間>: 指定ユーザーを任意期間ブロック（例: 1m, 2h, 3d, 10s）（管理者のみ）
+        #minianti list: 現在ブロック中のユーザー一覧を表示
+        (設定変更機能は今後も実装しません)
         """
         if subcmd.lower() == "bypass":
             if not ctx.guild:
@@ -342,6 +377,63 @@ def setup(bot):
                 except Exception:
                     pass
             await ctx.send(f"✅ ユーザーID `{user_id}` のblock/タイムアウトを解除しました。", delete_after=10)
+            return
+        if subcmd.lower() == "block":
+            if not ctx.guild:
+                await ctx.send("❌ サーバー内でのみ実行可能です。", delete_after=10)
+                return
+            from index import is_admin, load_config
+            config = load_config()
+            if not is_admin(str(ctx.author.id), ctx.guild.id, config):
+                await ctx.send("❌ 管理者のみ実行可能です。", delete_after=10)
+                return
+            args = arg.split()
+            if len(args) < 2 or not args[0].isdigit():
+                await ctx.send("ユーザーIDと期間を指定してください。例: #minianti block 123456789012345678 1m", delete_after=10)
+                return
+            user_id = int(args[0])
+            duration_str = args[1]
+            import re
+            m = re.match(r"(\d+)([smhd])", duration_str)
+            if not m:
+                await ctx.send("期間の形式が不正です。例: 1m, 2h, 3d, 10s", delete_after=10)
+                return
+            num, unit = int(m.group(1)), m.group(2)
+            seconds = num * {"s":1, "m":60, "h":3600, "d":86400}[unit]
+            global user_blocked_until
+            now = asyncio.get_event_loop().time()
+            user_blocked_until[user_id] = now + seconds
+            member = ctx.guild.get_member(user_id)
+            if member:
+                try:
+                    until = discord.utils.utcnow() + timedelta(seconds=seconds)
+                    await member.timeout(until, reason="miniAnti: 管理者による手動block")
+                except Exception:
+                    pass
+            await ctx.send(f"✅ ユーザーID `{user_id}` を {duration_str} ブロックしました。", delete_after=10)
+            return
+        if subcmd.lower() == "list":
+            now = asyncio.get_event_loop().time()
+            blocked = [(uid, until) for uid, until in user_blocked_until.items() if until > now]
+            if not blocked:
+                await ctx.send("現在ブロック中のユーザーはいません。", delete_after=10)
+                return
+            embed = discord.Embed(title="miniAnti ブロック中ユーザー一覧", color=0xA21CAF)
+            for uid, until in blocked:
+                left = int(until - now)
+                m, s = divmod(left, 60)
+                h, m = divmod(m, 60)
+                d, h = divmod(h, 24)
+                if d:
+                    time_str = f"{d}d {h}h {m}m {s}s"
+                elif h:
+                    time_str = f"{h}h {m}m {s}s"
+                elif m:
+                    time_str = f"{m}m {s}s"
+                else:
+                    time_str = f"{s}s"
+                embed.add_field(name=f"ユーザーID: {uid}", value=f"残り: {time_str}", inline=False)
+            await ctx.send(embed=embed)
             return
         if not subcmd:
             await ctx.send("`#minianti docs` を指定してください。", delete_after=10)
