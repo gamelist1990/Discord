@@ -440,10 +440,23 @@ class MiniAnti:
                 await message.author.timeout(
                     until, reason="miniAnti: スパム/荒らし検知による自動タイムアウト"
                 )
+                # タイムアウト付与時に履歴もクリア（解除時と同じ挙動）
+                user_recent_messages[user_id] = []
+                user_time_intervals[user_id] = []
+                if hasattr(MiniAnti, '_timebase_detect_count'):
+                    MiniAnti._timebase_detect_count[user_id] = 0
             except Exception:
                 pass
             return True
         return False
+
+    @staticmethod
+    async def handle_unblock(user_id):
+        # アンブロック時にも履歴をクリア
+        user_recent_messages[user_id] = []
+        user_time_intervals[user_id] = []
+        if hasattr(MiniAnti, '_timebase_detect_count'):
+            MiniAnti._timebase_detect_count[user_id] = 0
 
     @staticmethod
     async def handle_griefing(message, alert_type="text"):
@@ -585,6 +598,11 @@ def setup(bot):
                 f"✅ ユーザーID `{user_id}` のblock/タイムアウトを解除しました。",
                 delete_after=10,
             )
+            # アンブロック時にも履歴をクリア
+            try:
+                await MiniAnti.handle_unblock(user_id)
+            except Exception:
+                pass
             return
         if subcmd.lower() == "block":
             if not ctx.guild:
