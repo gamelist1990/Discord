@@ -3,13 +3,14 @@ import asyncio
 from discord.ext import commands
 import discord
 from datetime import timedelta
+import re
 
 # 類似メッセージのしきい値
 SIMILARITY_THRESHOLD = 0.85
 # 直近何件のメッセージを比較するか
 RECENT_MSG_COUNT = 5
 # スパム判定でブロックする秒数
-BLOCK_DURATION = 1 * 60  # 30分
+BLOCK_DURATION = 5 * 60
 
 # ユーザーごとの直近メッセージ履歴とブロック情報
 user_recent_messages = {}
@@ -19,6 +20,20 @@ user_blocked_until = {}
 IMAGE_SPAM_THRESHOLD = 3  # 直近何件の画像投稿でスパム判定するか
 IMAGE_SPAM_WINDOW = 30   # 秒
 user_image_timestamps = {}
+
+# メンションスパム検知用
+MENTION_SPAM_THRESHOLD = 3  # 直近何件のメンション投稿でスパム判定するか
+MENTION_SPAM_WINDOW = 30   # 秒
+user_mention_timestamps = {}
+
+# 禁止ワード・禁止ファイル名・禁止URLパターン
+BLOCK_WORDS = [
+    'crash', 'クラッシュ', 'crash.gif', 'crash.jpg', 'crash.png',
+    'ozeu-web-raider', 'ozeu', 'lookjbn.github.io',
+    'script.js', 'raider', 'web-raider',
+    'crash.gif', 'raider.gif',
+    # 必要に応じて追加
+]
 
 class Notifier:
     def __init__(self, message):
@@ -146,19 +161,127 @@ async def check_and_block_image_spam(message):
         return True
     return False
 
+async def check_and_block_mention_spam(message):
+    user_id = message.author.id
+    now = asyncio.get_event_loop().time()
+    mention_count = len(message.mentions)
+    # メンションがなければスルー
+    if mention_count == 0:
+        return False
+    timestamps = user_mention_timestamps.get(user_id, [])
+    timestamps = [t for t in timestamps if now - t < MENTION_SPAM_WINDOW]
+    timestamps.extend([now] * mention_count)
+    user_mention_timestamps[user_id] = timestamps
+    if len(timestamps) >= MENTION_SPAM_THRESHOLD:
+        user_blocked_until[user_id] = now + BLOCK_DURATION
+        user_recent_messages[user_id] = []
+        user_mention_timestamps[user_id] = []
+        try:
+            if hasattr(message.author, 'timed_out_until'):
+                until = discord.utils.utcnow() + timedelta(seconds=BLOCK_DURATION)
+                await message.author.timeout(until, reason="miniAnti: メンションスパム検出")
+            notifier = Notifier(message)
+            await notifier.purge_user_messages(alert_type="mention")
+        except Exception:
+            pass
+        return True
+    return False
+
+def contains_block_word(text):
+    text_lower = text.lower()
+    for word in BLOCK_WORDS:
+        if word in text_lower:
+            return True
+    return False
+
+async def check_and_block_blockword(message):
+    if contains_block_word(message.content):
+        user_id = message.author.id
+        now = asyncio.get_event_loop().time()
+        user_blocked_until[user_id] = now + BLOCK_DURATION
+        user_recent_messages[user_id] = []
+        try:
+            if hasattr(message.author, 'timed_out_until'):
+                until = discord.utils.utcnow() + timedelta(seconds=BLOCK_DURATION)
+                await message.author.timeout(until, reason="miniAnti: 禁止ワード検出")
+            notifier = Notifier(message)
+            await notifier.purge_user_messages(alert_type="blockword")
+        except Exception:
+            pass
+        return True
+    # 添付ファイル名やURLもチェック
+    for att in message.attachments:
+        if contains_block_word(att.filename):
+            # 同様にブロック
+            user_id = message.author.id
+            now = asyncio.get_event_loop().time()
+            user_blocked_until[user_id] = now + BLOCK_DURATION
+            user_recent_messages[user_id] = []
+            try:
+                if hasattr(message.author, 'timed_out_until'):
+                    until = discord.utils.utcnow() + timedelta(seconds=BLOCK_DURATION)
+                    await message.author.timeout(until, reason="miniAnti: 禁止ファイル検出")
+                notifier = Notifier(message)
+                await notifier.purge_user_messages(alert_type="blockword-file")
+            except Exception:
+                pass
+            return True
+    # URLもチェック
+    urls = re.findall(r'https?://\S+', message.content)
+    for url in urls:
+        if contains_block_word(url):
+            user_id = message.author.id
+            now = asyncio.get_event_loop().time()
+            user_blocked_until[user_id] = now + BLOCK_DURATION
+            user_recent_messages[user_id] = []
+            try:
+                if hasattr(message.author, 'timed_out_until'):
+                    until = discord.utils.utcnow() + timedelta(seconds=BLOCK_DURATION)
+                    await message.author.timeout(until, reason="miniAnti: 禁止URL検出")
+                notifier = Notifier(message)
+                await notifier.purge_user_messages(alert_type="blockword-url")
+            except Exception:
+                pass
+            return True
+    return False
+
 async def handle_griefing(message, alert_type="text"):
     notifier = Notifier(message)
     await notifier.purge_user_messages(alert_type=alert_type)
+
+async def is_user_blocked(message):
+    user_id = message.author.id
+    now = asyncio.get_event_loop().time()
+    # タイムアウト中かどうかも判定
+    if user_id in user_blocked_until and now < user_blocked_until[user_id]:
+        # すでにタイムアウト中なら何もしない
+        if hasattr(message.author, 'timed_out_until') and message.author.timed_out_until:
+            return True
+        # まだタイムアウトが付与されていなければ付与
+        try:
+            until = discord.utils.utcnow() + timedelta(seconds=int(user_blocked_until[user_id] - now))
+            await message.author.timeout(until, reason="miniAnti: スパム/荒らし検知による自動タイムアウト")
+        except Exception:
+            pass
+        return True
+    return False
 
 def setup(bot):
     @bot.listen('on_message')
     async def miniAnti_on_message(message):
         if message.author.bot or not message.guild:
             return
-        user_id = message.author.id
-        now = asyncio.get_event_loop().time()
-        # ブロック中なら削除
-        if user_id in user_blocked_until and now < user_blocked_until[user_id]:
+        # ブロック中ならタイムアウトを活用し削除
+        if await is_user_blocked(message):
+            try:
+                await message.delete()
+            except:
+                pass
+            return
+        # 禁止ワード・ファイル・URL判定
+        blockword_blocked = await check_and_block_blockword(message)
+        if blockword_blocked:
+            await handle_griefing(message, alert_type="blockword")
             try:
                 await message.delete()
             except:
@@ -173,7 +296,16 @@ def setup(bot):
             except:
                 pass
             return
-        # テキストスパム判定
+        # メンションスパム判定
+        mention_blocked = await check_and_block_mention_spam(message)
+        if mention_blocked:
+            await handle_griefing(message, alert_type="mention")
+            try:
+                await message.delete()
+            except:
+                pass
+            return
+        # テキストスパム判定（類似性）
         blocked = await check_and_block_spam(message)
         if blocked:
             await handle_griefing(message, alert_type="text")
@@ -181,4 +313,5 @@ def setup(bot):
                 await message.delete()
             except:
                 pass
+            return
 

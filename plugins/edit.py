@@ -193,6 +193,21 @@ def setup(bot):
                 ephemeral=True
             )
 
+        @discord.ui.button(label="🗳️ 投票の作成", style=ButtonStyle.secondary, emoji="🗳️")
+        async def toggle_create_vote(self, interaction: Interaction, button: Button):
+            if interaction.user.id != self.author_id:
+                await interaction.response.send_message("❌ この操作はコマンド実行者のみ可能です。", ephemeral=True)
+                return
+            await interaction.response.send_message(
+                embed=Embed(
+                    title="🗳️ 投票の作成 権限設定",
+                    description="有効/無効を選択してください",
+                    color=0x5865f2
+                ),
+                view=PermissionConfirmView(self.ctx, self.author_id, self.target_role, "create_vote", "投票の作成"),
+                ephemeral=True
+            )
+
         @discord.ui.button(label="🔙 戻る", style=ButtonStyle.primary, row=1)
         async def back_to_role_select(self, interaction: Interaction, button: Button):
             if interaction.user.id != self.author_id:

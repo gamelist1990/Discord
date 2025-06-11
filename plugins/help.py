@@ -25,12 +25,29 @@ class HelpPageView(View):
         start = self.page * self.per_page
         end = start + self.per_page
         cmds_page = self.cmds[start:end]
-        desc = '\n'.join(cmds_page)
         embed = Embed(
-            title=f"利用可能なコマンド一覧 (Page {self.page+1}/{self.max_page+1})",
-            description=desc or 'コマンドがありません',
+            title=f"📖 利用可能なコマンド一覧 (Page {self.page+1}/{self.max_page+1})",
+            description="**コマンド名** と _説明_ をご確認ください。",
             color=0x4ade80
         )
+        for cmd in cmds_page:
+            # コマンド名と説明を分離
+            if cmd.startswith("`"):
+                try:
+                    name, desc = cmd.split(':', 1)
+                except ValueError:
+                    name, desc = cmd, ''
+                name = name.strip('` ')
+                desc = desc.strip()
+                # Markdownでコマンド本体を強調、説明はイタリック
+                embed.add_field(
+                    name=f"`{name}`",
+                    value=f"*{desc or '説明なし'}*",
+                    inline=False
+                )
+            else:
+                embed.add_field(name=cmd, value='*説明なし*', inline=False)
+        embed.set_footer(text="Botに関する質問は管理者まで。 | Powered by Discord.py")
         return embed
 
     class PrevButton(Button):

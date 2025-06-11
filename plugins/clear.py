@@ -31,13 +31,47 @@ def setup(bot):
             await interaction.response.send_message(f"🧹 全テキストチャンネルから合計{deleted_total}件のメッセージを削除しました", ephemeral=True)
             self.stop()
 
+    class ClearRateLimitHelper:
+        """
+        clearコマンド専用のレート制限解除・回避・安全削除ヘルパー
+        """
+        @staticmethod
+        def reset_user(ctx):
+            try:
+                from index import rate_limited_users, user_command_timestamps
+                user_id = str(ctx.author.id)
+                if user_id in rate_limited_users:
+                    del rate_limited_users[user_id]
+                if user_id in user_command_timestamps:
+                    user_command_timestamps[user_id].clear()
+            except Exception:
+                pass
+
+        @staticmethod
+        async def safe_bulk_delete(messages, interval=0.6):
+            """
+            メッセージリストを1件ずつinterval秒間隔で削除（Discordレートリミット対策）
+            """
+            import asyncio
+            deleted_count = 0
+            for msg in messages:
+                try:
+                    await msg.delete()
+                    deleted_count += 1
+                    await asyncio.sleep(interval)
+                except Exception:
+                    pass
+            return deleted_count
+
     @commands.command()
-    async def clear(ctx, count: int = 10, mode: str = ""):
+    async def clear(ctx, count: str = "10", mode: str = ""):
         """
         指定した件数だけメッセージを一括削除します（管理者専用）。
         例: #clear 10 → このチャンネルで直近10件削除
         例: #clear 100 all → 全チャンネルで最新100件ずつ削除
         例: #clear 10 day → このチャンネルの日付ごとに削除ボタンを表示
+        例: #clear arasi → このチャンネル内の荒らし（類似）メッセージを一括削除
+        
         """
         config = load_config()
         if not is_admin(str(ctx.author.id), ctx.guild.id, config):
@@ -50,24 +84,35 @@ def setup(bot):
                 "・#clear 10 → このチャンネルで直近10件削除\n"
                 "・#clear 100 all → 全チャンネルで最新100件ずつ削除\n"
                 "・#clear 10 day → このチャンネルの日付ごとに削除ボタンを表示\n"
+                "・#clear arasi → このチャンネル内の荒らし（類似）メッセージを一括削除\n"
                 "※管理者のみ利用可能"
             )
             embed = Embed(title="clearコマンドの使い方", description=usage, color=0x4ade80)
             await ctx.send(embed=embed)
             return
+        # countが数字でなければmodeとして扱う
+        if count.isdigit():
+            count_int = int(count)
+        else:
+            mode = count
+            count_int = 10
+        # arasiモードの最大件数制限
+        if mode == "arasi":
+            if count_int > 100:
+                count_int = 100  # 明示的な数指定時は最大100
+            elif count == "arasi" or count_int > 20:
+                count_int = 20  # デフォルトや #clear arasi のみは最大20
         if mode == "all":
             # 全チャンネルでcount件ずつ削除
-            if count < 1 or count > 100:
+            if count_int < 1 or count_int > 100:
                 await ctx.send('1～100件の範囲で指定してください。')
                 return
             deleted_total = 0
             for channel in ctx.guild.text_channels:
-                try:
-                    deleted = await channel.purge(limit=count)
-                    deleted_total += len(deleted)
-                except Exception:
-                    pass
+                messages = [msg async for msg in channel.history(limit=count_int)]
+                deleted_total += await ClearRateLimitHelper.safe_bulk_delete(messages)
             await ctx.send(f'🧹 全テキストチャンネルから合計{deleted_total}件のメッセージを削除しました')
+            ClearRateLimitHelper.reset_user(ctx)
             return
         if mode == "day":
             # このチャンネルの実際のメッセージ日付ごと削除ボタン
@@ -116,8 +161,8 @@ def setup(bot):
                         def check(m):
                             return m.created_at.date() == target_date.date()
                         try:
-                            deleted = await self.channel.purge(check=check)
-                            deleted_total += len(deleted)
+                            messages = [m async for m in self.channel.history(limit=500) if check(m)]
+                            deleted_total += await ClearRateLimitHelper.safe_bulk_delete(messages)
                         except Exception:
                             pass
                         await interaction.followup.send(f"🧹 {self.date_str} のメッセージをこのチャンネルから{deleted_total}件削除しました", ephemeral=True)
@@ -126,11 +171,40 @@ def setup(bot):
             view = ChannelDayClearView(ctx)
             await view.setup_items()
             await ctx.send(embed=embed, view=view)
+            ClearRateLimitHelper.reset_user(ctx)
+            return
+        if mode == "arasi":
+            # 荒らしメッセージ（類似性の高いメッセージ）をこのチャンネルのみで削除
+            import difflib
+            threshold = 0.85  # 類似度のしきい値（調整可）
+            max_messages = count_int  # 指定件数まで
+            deleted_total = 0
+            channel = ctx.channel
+            messages = [msg async for msg in channel.history(limit=max_messages)]
+            to_delete = set()
+            for i, msg in enumerate(messages):
+                if not msg.content or msg.id in to_delete:
+                    continue
+                for j in range(i+1, len(messages)):
+                    other = messages[j]
+                    if not other.content or other.id in to_delete:
+                        continue
+                    ratio = difflib.SequenceMatcher(None, msg.content, other.content).ratio()
+                    if ratio >= threshold:
+                        to_delete.add(msg.id)
+                        to_delete.add(other.id)
+            if to_delete:
+                target_msgs = [msg for msg in messages if msg.id in to_delete]
+                deleted_total += await ClearRateLimitHelper.safe_bulk_delete(target_msgs)
+            await ctx.send(f'🧹 このチャンネル内の類似性の高い荒らしメッセージを合計{deleted_total}件削除しました')
+            ClearRateLimitHelper.reset_user(ctx)
             return
         # 通常の件数指定削除（このチャンネルのみ）
-        if count < 1 or count > 100:
+        if count_int < 1 or count_int > 100:
             await ctx.send('1～100件の範囲で指定してください。')
             return
-        deleted = await ctx.channel.purge(limit=count)
-        await ctx.send(f'🧹 {len(deleted)}件のメッセージを削除しました', delete_after=3)
+        messages = [msg async for msg in ctx.channel.history(limit=count_int)]
+        deleted = await ClearRateLimitHelper.safe_bulk_delete(messages)
+        await ctx.send(f'🧹 {deleted}件のメッセージを削除しました', delete_after=3)
+        ClearRateLimitHelper.reset_user(ctx)
     register_command(bot, clear, aliases=None, admin=True)
