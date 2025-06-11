@@ -360,8 +360,12 @@ def main():
 
 def isCommand(cmd_name):
     global bot_instance
-    if bot_instance and hasattr(bot_instance, 'get_command'):
-        return bot_instance.get_command(cmd_name) is not None
+    # 先頭の#を除去
+    if cmd_name.startswith('#'):
+        cmd_name = cmd_name[1:]
+    # Botのコマンド名一覧（help.pyのhelpコマンドと同じ方式）
+    if bot_instance and hasattr(bot_instance, 'commands'):
+        return any(c.name == cmd_name for c in bot_instance.commands)
     return False
 
 
