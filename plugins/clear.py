@@ -176,7 +176,7 @@ def setup(bot):
             ClearRateLimitHelper.reset_user(ctx)
             return
         if mode == "arasi":
-            # 荒らしメッセージ（類似性の高いメッセージ）をこのチャンネルのみで削除
+            # 荒らしメッセージ（類似性の高いメッセージ or 画像スパム）をこのチャンネルのみで削除
             import difflib
             threshold = 0.85  # 類似度のしきい値（調整可）
             max_messages = count_int  # 指定件数まで
@@ -184,6 +184,7 @@ def setup(bot):
             channel = ctx.channel
             messages = [msg async for msg in channel.history(limit=max_messages)]
             to_delete = set()
+            # テキスト類似スパム
             for i, msg in enumerate(messages):
                 if not msg.content or msg.id in to_delete:
                     continue
@@ -195,10 +196,15 @@ def setup(bot):
                     if ratio >= threshold:
                         to_delete.add(msg.id)
                         to_delete.add(other.id)
+            # 画像・動画スパム
+            media_exts = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".mp4", ".mov", ".avi", ".wmv", ".webm", ".mkv")
+            for msg in messages:
+                if any(att.filename.lower().endswith(ext) for att in getattr(msg, 'attachments', []) for ext in media_exts):
+                    to_delete.add(msg.id)
             if to_delete:
                 target_msgs = [msg for msg in messages if msg.id in to_delete]
                 deleted_total += await ClearRateLimitHelper.safe_bulk_delete(target_msgs)
-            await ctx.send(f'🧹 このチャンネル内の類似性の高い荒らしメッセージを合計{deleted_total}件削除しました')
+            await ctx.send(f'🧹 このチャンネル内の類似性の高い荒らしメッセージ・画像/動画スパムを合計{deleted_total}件削除しました')
             ClearRateLimitHelper.reset_user(ctx)
             return
         # 通常の件数指定削除（このチャンネルのみ）
