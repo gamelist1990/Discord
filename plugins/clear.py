@@ -49,20 +49,29 @@ def setup(bot):
                 pass
 
         @staticmethod
-        async def safe_bulk_delete(messages, interval=0.6):
+        async def safe_bulk_delete(messages, interval=0.6, batch_size=3, max_retries=3):
             """
-            メッセージリストを1件ずつinterval秒間隔で削除（Discordレートリミット対策）
-            botのメッセージも含めて削除
+            メッセージリストをbatch_size件ずつ並列で削除し、バッチごとにinterval秒待機（Discordレートリミット対策＆高速化）
+            レート制限(429)時は自動リトライし、リトライ時はintervalを延長
             """
             import asyncio
+            import time
             deleted_count = 0
-            for msg in messages:
-                try:
-                    await msg.delete()
-                    deleted_count += 1
-                    await asyncio.sleep(interval)
-                except Exception:
-                    pass
+            for i in range(0, len(messages), batch_size):
+                batch = messages[i:i+batch_size]
+                retries = 0
+                while retries <= max_retries:
+                    tasks = [msg.delete() for msg in batch]
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+                    # レート制限エラーがあればリトライ
+                    rate_limited = any(getattr(r, 'status', None) == 429 for r in results if isinstance(r, Exception))
+                    deleted_count += sum(1 for r in results if not isinstance(r, Exception))
+                    if not rate_limited:
+                        break
+                    # レート制限時はintervalを延長してリトライ
+                    retries += 1
+                    await asyncio.sleep(interval * (retries + 1))
+                await asyncio.sleep(interval)
             return deleted_count
 
     @commands.command()
