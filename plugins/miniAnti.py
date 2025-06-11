@@ -8,7 +8,7 @@ import re
 # 類似メッセージのしきい値
 SIMILARITY_THRESHOLD = 0.85
 # 直近何件のメッセージを比較するか
-RECENT_MSG_COUNT = 10
+RECENT_MSG_COUNT = 5
 # スパム判定でブロックする秒数
 BLOCK_DURATION = 5 * 60
 
