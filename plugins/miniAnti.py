@@ -270,6 +270,7 @@ def setup(bot):
         #minianti settings: 現在の設定をEmbedで表示
         #minianti docs: 各種機能の説明をEmbedで表示
         #minianti bypass <roleID>: 指定ロールをbypass（スパム判定除外）に設定（サーバーごと/管理者のみ）
+        #minianti unblock <ユーザーID>: 指定ユーザーのblock/タイムアウトを解除（管理者のみ）
         (管理者以外も利用可能/設定変更機能は今後も実装しません)
         """
         if subcmd.lower() == "bypass":
@@ -293,6 +294,32 @@ def setup(bot):
                 return
             update_guild_data(ctx.guild.id, "miniAntiBypassRole", role_id)
             await ctx.send(f"✅ このサーバーのminiAnti bypassロールを `{role.name}` (ID: {role_id}) に設定しました。", delete_after=10)
+            return
+        if subcmd.lower() == "unblock":
+            if not ctx.guild:
+                await ctx.send("❌ サーバー内でのみ実行可能です。", delete_after=10)
+                return
+            from index import is_admin, load_config
+            config = load_config()
+            if not is_admin(str(ctx.author.id), ctx.guild.id, config):
+                await ctx.send("❌ 管理者のみ実行可能です。", delete_after=10)
+                return
+            if not arg.isdigit():
+                await ctx.send("ユーザーIDを指定してください。例: #minianti unblock 123456789012345678", delete_after=10)
+                return
+            user_id = int(arg)
+            member = ctx.guild.get_member(user_id)
+            # miniAntiの内部block解除
+            global user_blocked_until
+            if user_id in user_blocked_until:
+                del user_blocked_until[user_id]
+            # Discordのタイムアウト解除
+            if member:
+                try:
+                    await member.edit(timed_out_until=None, reason="miniAnti: 管理者による手動unblock")
+                except Exception:
+                    pass
+            await ctx.send(f"✅ ユーザーID `{user_id}` のblock/タイムアウトを解除しました。", delete_after=10)
             return
         if not subcmd:
             await ctx.send("`#minianti settings` または `#minianti docs` を指定してください。", delete_after=10)
