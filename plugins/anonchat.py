@@ -50,7 +50,11 @@ def setup(bot):
             description="下のボタンから匿名メッセージを送信できます。",
             color=0x60a5fa
         )
+        # ModalInputViewは1回だけ生成し、ctx.sendも1回だけ呼ぶ
         async def on_anon_button(interaction, view):
+            # 既にモーダルが開いている場合は何もしない
+            if interaction.response.is_done():
+                return
             await interaction.response.send_modal(AnonChatModal(ctx))
         view = ModalInputView(
             label="チャットする",
