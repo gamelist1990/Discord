@@ -4,16 +4,53 @@ from discord.ext import commands
 import discord
 from datetime import timedelta
 import re
-import tempfile
-import aiohttp
-import urllib.parse
 
 # 類似メッセージのしきい値
 SIMILARITY_THRESHOLD = 0.85
 # 直近何件のメッセージを比較するか
-RECENT_MSG_COUNT = 3
+RECENT_MSG_COUNT = 5
 # スパム判定でブロックする秒数
 BLOCK_DURATION = 5 * 60
+
+# テキストスパム検知の詳細設定
+TEXT_SPAM_CONFIG = {
+    # 基本閾値
+    "base_threshold": 0.8,
+    # 高類似度の閾値とスコア
+    "high_similarity_threshold": 0.9,
+    "high_similarity_score": 0.6,
+    "medium_similarity_threshold": 0.75,
+    "medium_similarity_score": 0.35,
+    "low_similarity_threshold": 0.6,
+    "low_similarity_score": 0.15,
+    # 連投間隔のスコア
+    "rapid_post_threshold": 1.0,
+    "rapid_post_score": 0.4,
+    "fast_post_threshold": 2.0,
+    "fast_post_score": 0.2,
+    # ランダム性スコア調整
+    "random_text_score": 0.35,
+    "repetitive_char_score": 0.4,
+    "no_vowel_score": 0.3,
+    # 長さによるスコア調整
+    "very_long_threshold": 500,
+    "very_long_score": 0.3,
+    "long_threshold": 300,
+    "long_score": 0.15,
+    "very_short_threshold": 2,
+    "very_short_score": 0.25,
+    # 記号率スコア調整
+    "high_symbol_threshold": 0.7,
+    "high_symbol_score": 0.3,
+    "medium_symbol_threshold": 0.5,
+    "medium_symbol_score": 0.15,
+    # 日本語文字の重み（誤検知を減らすため）
+    "japanese_text_reduction": 0.2,
+    # 短時間での連続投稿カウント
+    "burst_count_threshold": 4,
+    "burst_window": 10,
+    "burst_score": 0.5,
+}
 
 # ユーザーごとの直近メッセージ履歴とブロック情報
 user_recent_messages = {}
@@ -150,69 +187,197 @@ def is_random_spam(text):
 
 class MiniAnti:
     @staticmethod
+    def _is_japanese_heavy(text):
+        """テキストが日本語中心かどうかを判定"""
+        if not text:
+            return False
+        import re
+        # ひらがな、カタカナ、漢字の文字数をカウント
+        japanese_chars = len(re.findall(r'[\u3040-\u309f\u30a0-\u30ff\u4e00-\u9fff]', text))
+        return japanese_chars / len(text) > 0.3
+
+    @staticmethod
+    def _count_burst_messages(history, now, window=10):
+        """指定時間内の連続投稿数をカウント"""
+        if not history:
+            return 0
+        count = 1  # 現在のメッセージを含む
+        for old_msg in reversed(history):
+            old_time = old_msg[1] if isinstance(old_msg, tuple) else 0
+            if now - old_time <= window:
+                count += 1
+            else:
+                break
+        return count
+
+    @staticmethod
     def _score_similarity(message, history, now):
-        # 類似度スコア: 直近メッセージと高類似度なら加点
+        """改良された類似度スコア計算"""
+        if not history:
+            return 0
+        
+        config = TEXT_SPAM_CONFIG
         max_score = 0
+        content = message.content.strip()
+        
+        # 短すぎるメッセージの類似度は重要視しない
+        if len(content) < 5:
+            return 0
+        
         for old_msg in history:
             old_content, old_time = old_msg if isinstance(old_msg, tuple) else (old_msg, 0)
-            ratio = difflib.SequenceMatcher(None, old_content, message.content).ratio()
-            if ratio >= 0.85 and abs(now - old_time) < 2:
-                max_score = max(max_score, 0.5)
-            elif ratio >= 0.7:
-                max_score = max(max_score, 0.3)
+            old_content = old_content.strip()
+            
+            # 同じ内容の場合は確実にスパム
+            if content == old_content:
+                return config["high_similarity_score"]
+            
+            ratio = difflib.SequenceMatcher(None, old_content, content).ratio()
+            time_diff = abs(now - old_time)
+            
+            # 時間が近いほど重要視
+            time_weight = 1.0 if time_diff < 5 else 0.8 if time_diff < 15 else 0.6
+            
+            if ratio >= config["high_similarity_threshold"]:
+                score = config["high_similarity_score"] * time_weight
+            elif ratio >= config["medium_similarity_threshold"]:
+                score = config["medium_similarity_score"] * time_weight
+            elif ratio >= config["low_similarity_threshold"]:
+                score = config["low_similarity_score"] * time_weight
+            else:
+                score = 0
+            
+            max_score = max(max_score, score)
+        
         return max_score
 
     @staticmethod
     def _score_randomness(message):
-        # ランダム・意味不明スパムスコア
-        text = message.content
-        if len(text) > 20:
-            import re
-            non_jp = re.sub(r"[\u3040-\u30ff\u4e00-\u9fff]", "", text)
+        """改良されたランダム性スコア計算"""
+        text = message.content.strip()
+        if len(text) < 3:  # 短いテキストはランダム判定しない
+            return 0
+        
+        config = TEXT_SPAM_CONFIG
+        score = 0
+        
+        import re
+        
+        # 日本語が多い場合はランダム性スコアを軽減
+        is_jp_heavy = MiniAnti._is_japanese_heavy(text)
+        reduction = config["japanese_text_reduction"] if is_jp_heavy else 0
+        
+        # 非日本語文字の比率（改良）
+        if len(text) > 15:
+            non_jp = re.sub(r'[\u3040-\u309f\u30a0-\u30ff\u4e00-\u9fff\s]', '', text)
             if len(non_jp) / len(text) > 0.8:
-                return 0.3
-            if re.fullmatch(r"(.)\1{7,}", text) or re.fullmatch(r"(..)(\1){5,}", text):
-                return 0.3
-            if re.fullmatch(r"[A-Za-z0-9]{15,}", text):
-                return 0.3
-            vowels = "aeiouあいうえお"
-            v_count = sum(1 for c in text if c in vowels)
-            if v_count / len(text) < 0.2:
-                return 0.3
-        return 0
+                score += config["random_text_score"] - reduction
+        
+        # 繰り返し文字パターン（より厳密に）
+        if re.search(r'(.)\1{8,}', text):  # 同じ文字9回以上
+            score += config["repetitive_char_score"]
+        elif re.search(r'(.{2,3})\1{4,}', text):  # 2-3文字の繰り返し5回以上
+            score += config["repetitive_char_score"]
+        
+        # 英数字のみの長い文字列
+        if len(text) > 20 and re.fullmatch(r'[A-Za-z0-9\s]{20,}', text):
+            # ただし、意味のある英単語が含まれている場合は軽減
+            words = re.findall(r'[A-Za-z]{3,}', text)
+            if len(words) < 3:  # 英単語が少ない場合のみペナルティ
+                score += config["random_text_score"] - reduction
+        
+        # 母音の比率（改良）
+        if len(text) > 15:
+            vowels = 'aeiouあいうえおAEIOU'
+            consonants = 'bcdfghjklmnpqrstvwxyzかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん'
+            vowel_count = sum(1 for c in text if c in vowels)
+            consonant_count = sum(1 for c in text if c in consonants)
+            
+            if consonant_count > 0:
+                vowel_ratio = vowel_count / (vowel_count + consonant_count)
+                if vowel_ratio < 0.15:  # 極端に母音が少ない
+                    score += config["no_vowel_score"] - reduction
+        
+        return min(score, 0.5)  # 最大値を制限
 
     @staticmethod
     def _score_length(message):
-        # 長文・短文スパムスコア
-        l = len(message.content)
-        if l > 300:
-            return 0.2
-        if l < 3:
-            return 0.2
+        """改良された長さスコア計算"""
+        content = message.content.strip()
+        length = len(content)
+        config = TEXT_SPAM_CONFIG
+        
+        # 極端に長い
+        if length > config["very_long_threshold"]:
+            return config["very_long_score"]
+        elif length > config["long_threshold"]:
+            return config["long_score"]
+        
+        # 極端に短い（ただし絵文字のみなどは除外）
+        if length <= config["very_short_threshold"]:
+            # 絵文字や日本語文字が含まれている場合は軽減
+            import re
+            if re.search(r'[\u3040-\u309f\u30a0-\u30ff\u4e00-\u9fff\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF]', content):
+                return 0
+            return config["very_short_score"]
+        
         return 0
 
     @staticmethod
     def _score_symbol_ratio(message):
-        # 記号率スパムスコア
-        text = message.content
+        """改良された記号率スコア計算"""
+        text = message.content.strip()
         if not text:
             return 0
+        
+        config = TEXT_SPAM_CONFIG
         import re
-        symbol_count = len(re.findall(r"[!-/:-@\[-`{-~]", text))
-        if symbol_count / len(text) > 0.5:
-            return 0.2
+        
+        # 基本的な記号をカウント（日本語の句読点は除外）
+        symbols = re.findall(r'[!@#$%^&*()_+=\[\]{}|\\:";\'<>?/~`\-]', text)
+        symbol_count = len(symbols)
+        
+        # 絵文字は記号としてカウントしない
+        emoji_pattern = re.compile(r'[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF]')
+        text_without_emoji = emoji_pattern.sub('', text)
+        
+        if len(text_without_emoji) == 0:
+            return 0
+        
+        symbol_ratio = symbol_count / len(text_without_emoji)
+        
+        if symbol_ratio > config["high_symbol_threshold"]:
+            return config["high_symbol_score"]
+        elif symbol_ratio > config["medium_symbol_threshold"]:
+            return config["medium_symbol_score"]
+        
+        return 0
+
+    @staticmethod
+    def _score_burst_posting(history, now):
+        """短時間での連続投稿スコア"""
+        config = TEXT_SPAM_CONFIG
+        burst_count = MiniAnti._count_burst_messages(history, now, config["burst_window"])
+        
+        if burst_count >= config["burst_count_threshold"]:
+            return config["burst_score"]
+        
         return 0
 
     @staticmethod
     async def check_and_block_spam(message):
+        # コマンドチェック
         if hasattr(message, "content") and message.content.startswith("#"):
             from index import isCommand
             cmd_name = message.content[1:].split()[0]
             if isCommand(cmd_name):
                 return False
+        
+        # バイパスチェック
         if MiniAntiBypass.should_bypass(message):
             return False
-        # 添付ファイルが画像/動画/gifのみ、かつcontentが空またはURLのみの場合はスキップ
+        
+        # メディアのみメッセージはスキップ
         media_exts = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".mp4", ".mov", ".avi", ".wmv", ".webm", ".mkv")
         only_media = False
         if hasattr(message, "attachments") and message.attachments:
@@ -222,25 +387,54 @@ class MiniAnti:
                     only_media = True
         if only_media:
             return False
+        
         user_id = message.author.id
         now = asyncio.get_event_loop().time()
         history = user_recent_messages.get(user_id, [])
-        # スコアリング
+        
+        # 設定読み込み
+        config = TEXT_SPAM_CONFIG
+        
+        # スコアリング（改良版）
         score = 0
-        score += MiniAnti._score_similarity(message, history, now)
-        score += MiniAnti._score_randomness(message)
-        score += MiniAnti._score_length(message)
-        score += MiniAnti._score_symbol_ratio(message)
-        # 連投間隔スコア
-        if history and now - history[-1][1] < 1.5:
-            score += 0.3
+        
+        # 各スコア要素を計算
+        similarity_score = MiniAnti._score_similarity(message, history, now)
+        randomness_score = MiniAnti._score_randomness(message)
+        length_score = MiniAnti._score_length(message)
+        symbol_score = MiniAnti._score_symbol_ratio(message)
+        burst_score = MiniAnti._score_burst_posting(history, now)
+        
+        # 連投間隔スコア（改良版）
+        interval_score = 0
+        if history:
+            last_time = history[-1][1] if isinstance(history[-1], tuple) else 0
+            interval = now - last_time
+            
+            if interval < config["rapid_post_threshold"]:
+                interval_score = config["rapid_post_score"]
+            elif interval < config["fast_post_threshold"]:
+                interval_score = config["fast_post_score"]
+        
+        # 総合スコア計算
+        score = similarity_score + randomness_score + length_score + symbol_score + interval_score + burst_score
+        
+        # 日本語中心のテキストの場合、閾値を少し上げる（誤検知防止）
+        threshold = config["base_threshold"]
+        if MiniAnti._is_japanese_heavy(message.content):
+            threshold += 0.1
+        
         # 履歴更新
         history.append((message.content, now))
         if len(history) > RECENT_MSG_COUNT:
             history = history[-RECENT_MSG_COUNT:]
         user_recent_messages[user_id] = history
-        # 閾値
-        if score >= 0.7:
+        
+        # デバッグ情報（開発用）
+        # print(f"[miniAnti] user={message.author.id} score={score:.2f} threshold={threshold:.2f} sim={similarity_score:.2f} rand={randomness_score:.2f} len={length_score:.2f} sym={symbol_score:.2f} int={interval_score:.2f} burst={burst_score:.2f}")
+        
+        # 判定
+        if score >= threshold:
             user_blocked_until[user_id] = now + BLOCK_DURATION
             user_recent_messages[user_id] = []
             try:
@@ -252,6 +446,7 @@ class MiniAnti:
             except Exception:
                 pass
             return True
+        
         return False
 
     @staticmethod
@@ -512,8 +707,7 @@ def setup(bot):
             await MiniAnti.handle_griefing(message, alert_type="text")
             try:
                 await message.delete()
-            except:
-                pass
+            except:                pass
             return
 
     @commands.command()
@@ -527,7 +721,7 @@ def setup(bot):
         #anti unblock <ユーザーID>: 指定ユーザーのblock/タイムアウトを解除（管理者のみ）
         #anti block <ユーザーID> <期間>: 指定ユーザーを任意期間ブロック（例: 1m, 2h, 3d, 10s）（管理者のみ）
         #anti list: 現在ブロック中のユーザー一覧を表示
-        ※設定変更機能は今後も実装しません
+        #anti test <テキスト>: 指定したテキストのスパムスコアを表示（管理者のみ）
 
         詳細は #anti docs を参照してください。
         """
@@ -535,7 +729,12 @@ def setup(bot):
         args = ctx.message.content.split()
         subcmd = args[1] if len(args) > 1 else ""
         arg = args[2] if len(args) > 2 else ""
-        if subcmd.lower() == "bypass":
+        
+        if subcmd.lower() in ["config", "test"]:
+            await ctx.send("❌ この設定はコードでのみ変更可能です。管理者が直接コードを編集してください。", delete_after=15)
+            return
+        
+        elif subcmd.lower() == "bypass":
             if not ctx.guild:
                 await ctx.send("❌ サーバー内でのみ実行可能です。", delete_after=10)
                 return
@@ -676,40 +875,44 @@ def setup(bot):
                 embed.add_field(
                     name=f"ユーザーID: {uid}", value=f"残り: {time_str}", inline=False
                 )
-            await ctx.send(embed=embed)
+            await ctx.send(embed=embed)            
             return
         if not subcmd:
             await ctx.send("`#minianti docs` を指定してください。", delete_after=10)
             return
         elif subcmd.lower() == "docs":
-            embed = discord.Embed(title="miniAnti 機能説明", color=0x38BDF8)
+            embed = discord.Embed(title="miniAnti v2.0 機能説明", color=0x38BDF8)
             embed.add_field(
-                name="テキストスパム検知",
-                value="複数特徴量（類似度・連投間隔・ランダム性・長短・記号率など）をスコア化し、合計スコアが閾値を超えた場合に自動でタイムアウト・削除・DM警告します。",
+                name="🔍 改良されたテキストスパム検知",
+                value="**多層スコアリングシステム**\n・類似度検知（3段階）\n・ランダム性検知（日本語考慮）\n・長さ検知（絵文字対応）\n・記号率検知（絵文字除外）\n・連投間隔検知\n・バースト投稿検知",
                 inline=False,
             )
             embed.add_field(
-                name="画像・動画スパム検知",
-                value="短時間に画像や動画を連投、または点滅gifを投稿した場合に自動でタイムアウトします。",
+                name="🛡️ 誤検知防止機能",
+                value="・日本語中心テキストの閾値調整\n・絵文字・句読点の適切な処理\n・文脈を考慮した判定\n・動的な閾値調整",
                 inline=False,
             )
             embed.add_field(
-                name="メンションスパム検知",
-                value="短時間に複数人へメンションを連投した場合に自動でタイムアウトします。",
+                name="📸 メディアスパム検知",
+                value="短時間での画像・動画の連投を自動検知し、タイムアウトを実行します。",
                 inline=False,
             )
             embed.add_field(
-                name="タイムベース検知",
-                value="送信間隔の周期性や分散からbot的・荒らし的な投稿パターンを自動検知します。",
+                name="👥 メンションスパム検知",
+                value="短時間での複数メンションを検知し、自動でタイムアウトします。",
                 inline=False,
             )
             embed.add_field(
-                name="自動タイムアウト・削除・DM警告",
-                value="スパム検知時は自動でタイムアウト・メッセージ削除・DM警告を行います。",
+                name="⏱️ タイムベース検知",
+                value="周期的な投稿パターンやbot的な行動を検知します。",
+                inline=False,
+            )
+            embed.add_field(
+                name="⚙️ 設定・管理機能",                value="`#anti settings` - 現在の設定表示\n`#anti config` - 設定変更（管理者）\n`#anti test` - テキスト判定テスト（管理者）\n`#anti bypass` - 除外ロール設定（管理者）",
                 inline=False,
             )
             embed.set_footer(
-                text="miniAnti v1.1 | 詳細・ご要望は管理者まで"
+                text="miniAnti v2.0 | より正確で誤検知の少ない検知システム"
             )
             await ctx.send(embed=embed)
         else:
