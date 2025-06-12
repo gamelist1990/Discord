@@ -12,6 +12,39 @@ RECENT_MSG_COUNT = 5
 # スパム判定でブロックする秒数
 BLOCK_DURATION = 5 * 60
 
+
+
+#| キー名                        | 意味・用途                                                  
+#|-------------------------------|------------------------------------------------------------
+#| base_threshold                | スパム判定の基本となるスコア閾値（これ以上でスパムと判定）       
+#| high_similarity_threshold     | メッセージ類似度が「高」とみなすしきい値（0.9以上）              
+#| high_similarity_score         | 高類似度の場合に加算されるスコア                                 
+#| medium_similarity_threshold   | メッセージ類似度が「中」とみなすしきい値（0.75以上）             
+#| medium_similarity_score       | 中類似度の場合に加算されるスコア                                 
+#| low_similarity_threshold      | メッセージ類似度が「低」とみなすしきい値（0.6以上）              
+#| low_similarity_score          | 低類似度の場合に加算されるスコア                                 
+#| rapid_post_threshold          | 直前投稿からこの秒数未満なら「超高速連投」と判定                 
+#| rapid_post_score              | 超高速連投時に加算されるスコア                                   
+#| fast_post_threshold           | 直前投稿からこの秒数未満なら「高速連投」と判定                   
+#| fast_post_score               | 高速連投時に加算されるスコア                                     
+#| random_text_score             | ランダム性が高いテキスト（意味不明な文字列等）に加算されるスコア 
+#| repetitive_char_score         | 同じ文字やパターンの繰り返しが多い場合に加算されるスコア         
+#| no_vowel_score                | 母音が極端に少ない場合に加算されるスコア                         
+#| very_long_threshold           | メッセージがこの文字数を超えると「非常に長い」と判定             
+#| very_long_score               | 非常に長いメッセージに加算されるスコア                           
+#| long_threshold                | メッセージがこの文字数を超えると「長い」と判定                   
+#| long_score                    | 長いメッセージに加算されるスコア                                 
+#| very_short_threshold          | メッセージがこの文字数以下だと「非常に短い」と判定               
+#| very_short_score              | 非常に短いメッセージに加算されるスコア                           
+#| high_symbol_threshold         | 記号率がこの割合を超えると「記号だらけ」と判定                   
+#| high_symbol_score             | 記号だらけのメッセージに加算されるスコア                         
+#| medium_symbol_threshold       | 記号率がこの割合を超えると「記号多め」と判定                     
+#| medium_symbol_score           | 記号多めのメッセージに加算されるスコア                           
+#| japanese_text_reduction       | 日本語中心のテキストの場合、ランダム性スコア等を減点する割合     
+#| burst_count_threshold         | 指定秒数内にこの回数以上投稿すると「バースト投稿」と判定         
+#| burst_window                  | バースト投稿判定のための時間窓（秒）                             
+#| burst_score                   | バースト投稿時に加算されるスコア                                 
+
 # テキストスパム検知の詳細設定
 TEXT_SPAM_CONFIG = {
     # 基本閾値
