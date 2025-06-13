@@ -1,43 +1,46 @@
 import os
 import json
-import shutil
 from threading import Lock
 from datetime import datetime
 import threading
 import time
-import discord
-import asyncio
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("dbsync")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_FILE = os.path.join(BASE_DIR, "database.json")
 DB_BACKUP_FILE = os.path.join(BASE_DIR, "database.json.bak")
 _db_lock = Lock()
 
+# --- グローバルDBキャッシュ管理 ---
+global_db_cache = None
+
+def load_db_cache():
+    global global_db_cache
+    if global_db_cache is None:
+        if os.path.exists(DB_FILE):
+            with _db_lock, open(DB_FILE, "r", encoding="utf-8") as f:
+                global_db_cache = json.load(f)
+        else:
+            global_db_cache = {}
+    return global_db_cache
+
+def save_db_cache():
+    global global_db_cache
+    if global_db_cache is not None:
+        with _db_lock, open(DB_FILE, "w", encoding="utf-8") as f:
+            json.dump(global_db_cache, f, ensure_ascii=False, indent=2)
+
+# --- 既存の_get/_save_dbをキャッシュ対応に書き換え ---
 def _load_db():
-    if not os.path.exists(DB_FILE):
-        return {}
-    try:
-        with _db_lock, open(DB_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        # バックアップから復元を試みる
-        if os.path.exists(DB_BACKUP_FILE):
-            try:
-                with open(DB_BACKUP_FILE, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception:
-                return {}
-        return {}
+    return load_db_cache()
 
 def _save_db(data):
-    # 保存前にバックアップを作成
-    if os.path.exists(DB_FILE):
-        try:
-            shutil.copy2(DB_FILE, DB_BACKUP_FILE)
-        except Exception:
-            pass
-    with _db_lock, open(DB_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    global global_db_cache
+    global_db_cache = data
+    save_db_cache()
 
 # ギルド毎のデータ管理機能
 def get_guild_data(guild_id):
@@ -116,82 +119,7 @@ def delete_channel_config(guild_id, channel_id):
         _save_db(db)
 
 # --- GuildDatabaseカテゴリ管理 ---
-class GuildDatabase:
-    CATEGORY_NAME = "📃｜DataBase"
-    CHANNEL_PREFIX = "db-"
-    RATE_LIMIT_SECONDS = 2  # チャンネル作成・削除の最小間隔
-    _last_action = {}
-
-    @classmethod
-    async def ensure_category(cls, guild: discord.Guild):
-        category = discord.utils.get(guild.categories, name=cls.CATEGORY_NAME)
-        bot_member = guild.me
-        if not category:
-            overwrites = {}
-            if guild.default_role is not None:
-                overwrites[guild.default_role] = discord.PermissionOverwrite(view_channel=False)
-            category = await guild.create_category(
-                name=cls.CATEGORY_NAME,
-                overwrites=overwrites,  # type: ignore
-                reason="GuildDatabaseカテゴリ自動作成"
-            )
-            # botに権限を付与
-            if bot_member:
-                await category.set_permissions(bot_member, view_channel=True, send_messages=True, manage_channels=True, manage_permissions=True)
-        else:
-            # 権限を再設定
-            overwrites = dict(category.overwrites)
-            overwrites[guild.default_role] = discord.PermissionOverwrite(view_channel=False)
-            await category.edit(overwrites=overwrites, reason="GuildDatabaseカテゴリ権限修正")
-            if bot_member:
-                await category.set_permissions(bot_member, view_channel=True, send_messages=True, manage_channels=True, manage_permissions=True)
-        return category
-
-    @classmethod
-    async def clearAll(cls, guild: discord.Guild):
-        """カテゴリ内の全チャンネルを削除（RateLimit対策あり）"""
-        category = await cls.ensure_category(guild)
-        now = asyncio.get_event_loop().time()
-        last = cls._last_action.get(guild.id, 0)
-        if now - last < cls.RATE_LIMIT_SECONDS:
-            await asyncio.sleep(cls.RATE_LIMIT_SECONDS - (now - last))
-        for channel in list(category.channels):
-            try:
-                await channel.delete(reason="GuildDatabase全削除")
-                await asyncio.sleep(cls.RATE_LIMIT_SECONDS)
-            except Exception:
-                pass
-        cls._last_action[guild.id] = asyncio.get_event_loop().time()
-
-    @classmethod
-    async def create_db_channel(cls, guild: discord.Guild, name: str, content: str = ""):
-        """カテゴリ内に新しいDBチャンネルを作成（RateLimit対策あり）"""
-        category = await cls.ensure_category(guild)
-        now = asyncio.get_event_loop().time()
-        last = cls._last_action.get(guild.id, 0)
-        if now - last < cls.RATE_LIMIT_SECONDS:
-            await asyncio.sleep(cls.RATE_LIMIT_SECONDS - (now - last))
-        channel = await guild.create_text_channel(
-            name=f"{cls.CHANNEL_PREFIX}{name}",
-            category=category,
-            reason="GuildDatabaseチャンネル自動生成",
-            overwrites={
-                guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True, manage_permissions=True)
-            }
-        )
-        if content:
-            try:
-                await channel.send(content)
-            except Exception:
-                pass
-        cls._last_action[guild.id] = asyncio.get_event_loop().time()
-        return channel
-
-    @classmethod
-    async def get_db_channels(cls, guild: discord.Guild):
-        category = await cls.ensure_category(guild)
-        return [ch for ch in category.channels if isinstance(ch, discord.TextChannel) and ch.name.startswith(cls.CHANNEL_PREFIX)]
+# GuildDatabaseクラスは廃止
 
 # === APIキー管理 ===
 API_KEY_DB_KEY = "api_keys"
@@ -256,44 +184,5 @@ def delete_api_key(api_key):
     if api_key in api_keys:
         del api_keys[api_key]
         _save_db(db)
-
-async def ensure_guild_database_category(guild: discord.Guild, bot_user: discord.Member, role_name: str = "DataBaseAccess"):
-    """
-    ギルドに専用カテゴリ「📃｜DataBase」とアクセス用ロールを作成し、botに付与。
-    カテゴリの閲覧権限をそのロールのみに設定し、通知を全てoffにする。
-    戻り値: (category, role)
-    """
-    # ロール作成または取得
-    role = discord.utils.get(guild.roles, name=role_name)
-    if not role:
-        role = await guild.create_role(name=role_name, reason="DataBaseアクセス用自動ロール")
-    # botにロールを付与
-    if role not in bot_user.roles:
-        await bot_user.add_roles(role, reason="DataBaseアクセス用ロール自動付与")
-    # カテゴリ作成または取得
-    category = discord.utils.get(guild.categories, name="📃｜DataBase")
-    if not category:
-        overwrites = {}
-        default_role_obj = discord.utils.get(guild.roles, id=guild.default_role.id)
-        role_obj = discord.utils.get(guild.roles, id=role.id)
-        if default_role_obj is not None:
-            overwrites[default_role_obj] = discord.PermissionOverwrite(view_channel=False)
-        if role_obj is not None:
-            overwrites[role_obj] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
-        category = await guild.create_category(name="📃｜DataBase", overwrites=overwrites, reason="DataBase専用カテゴリ自動作成")
-    else:
-        # 既存カテゴリの権限を修正 
-        overwrites = category.overwrites
-        overwrites[guild.default_role] = discord.PermissionOverwrite(view_channel=False)
-        overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
-        await category.edit(overwrites=overwrites, reason="DataBaseカテゴリ権限修正")
-    # 通知設定はAPIから直接は変更不可。必要なら案内メッセージを送信
-    for channel in category.channels:
-        try:
-            if isinstance(channel, discord.TextChannel):
-                await channel.edit(slowmode_delay=0, reason="DataBaseカテゴリ通知抑制")
-        except Exception:
-            pass
-    return category, role
 
 
