@@ -5,6 +5,8 @@ from datetime import datetime
 import threading
 import time
 import logging
+import requests
+from dotenv import load_dotenv
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("dbsync")
@@ -184,5 +186,24 @@ def delete_api_key(api_key):
     if api_key in api_keys:
         del api_keys[api_key]
         _save_db(db)
+
+# --- タイムスタンプ記録 ---
+load_dotenv(os.path.join(BASE_DIR, ".env"))
+
+TIMESTAMP_STARTED_KEY = "db_last_started"
+TIMESTAMP_SAVED_KEY = "db_last_saved"
+
+
+def record_db_timestamp(key: str):
+    """database.jsonに現在時刻のタイムスタンプを記録する"""
+    db = _load_db()
+    db[key] = datetime.utcnow().isoformat()
+    _save_db(db)
+
+
+def get_db_timestamp(key: str):
+    """database.jsonから指定キーのタイムスタンプを取得"""
+    db = _load_db()
+    return db.get(key)
 
 

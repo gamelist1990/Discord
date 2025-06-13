@@ -11,7 +11,8 @@ import discord
 # スパム検知用定数・グローバル変数
 SIMILARITY_THRESHOLD = 0.85
 RECENT_MSG_COUNT = 5
-BLOCK_DURATION = 5 * 60
+BLOCK_DURATION = 5 * 60  # デフォルト: 5分
+DEFAULT_TIMEOUT_DURATION = 5 * 60  # Discordのタイムアウト
 TEXT_SPAM_CONFIG = {
     "base_threshold": 0.8,
     "high_similarity_threshold": 0.9,
@@ -60,7 +61,7 @@ def _now():
 
 class Spam:
     @staticmethod
-    async def check_and_block_spam(message):
+    async def check_and_block_spam(message, timeout_duration: int = DEFAULT_TIMEOUT_DURATION):
         # AntiCheat全体が無効な場合は処理しない
         from .config import AntiCheatConfig
         if not await AntiCheatConfig.is_enabled(message.guild):
@@ -121,12 +122,16 @@ class Spam:
         if score >= TEXT_SPAM_CONFIG["base_threshold"]:
             user_blocked_until[uid] = now + BLOCK_DURATION
             await Notifier(message).purge_user_messages(alert_type="text")
+            try:
+                await message.author.timeout(duration=timeout_duration, reason="テキストスパム検知による自動タイムアウト")
+            except Exception:
+                pass
             return True
         return False
 
 class MediaSpam:
     @staticmethod
-    async def check_and_block_media_spam(message):
+    async def check_and_block_media_spam(message, timeout_duration: int = DEFAULT_TIMEOUT_DURATION):
         # AntiCheat全体が無効な場合は処理しない
         from .config import AntiCheatConfig
         if not await AntiCheatConfig.is_enabled(message.guild):
@@ -151,12 +156,16 @@ class MediaSpam:
             if len(user_image_timestamps[uid]) >= IMAGE_SPAM_THRESHOLD:
                 user_blocked_until[uid] = now + BLOCK_DURATION
                 await Notifier(message).purge_user_messages(alert_type="image")
+                try:
+                    await message.author.timeout(duration=timeout_duration, reason="画像・動画スパム検知による自動タイムアウト")
+                except Exception:
+                    pass
                 return True
         return False
 
 class MentionSpam:
     @staticmethod
-    async def check_and_block_mention_spam(message):
+    async def check_and_block_mention_spam(message, timeout_duration: int = DEFAULT_TIMEOUT_DURATION):
         # AntiCheat全体が無効な場合は処理しない
         from .config import AntiCheatConfig
         if not await AntiCheatConfig.is_enabled(message.guild):
@@ -179,12 +188,16 @@ class MentionSpam:
             if len(user_mention_timestamps[uid]) >= MENTION_SPAM_THRESHOLD:
                 user_blocked_until[uid] = now + BLOCK_DURATION
                 await Notifier(message).purge_user_messages(alert_type="mention")
+                try:
+                    await message.author.timeout(duration=timeout_duration, reason="メンションスパム検知による自動タイムアウト")
+                except Exception:
+                    pass
                 return True
         return False
 
 class TokenSpam:
     @staticmethod
-    async def check_and_block_token_spam(message):
+    async def check_and_block_token_spam(message, timeout_duration: int = DEFAULT_TIMEOUT_DURATION):
         # AntiCheat全体が無効な場合は処理しない
         from .config import AntiCheatConfig
         if not await AntiCheatConfig.is_enabled(message.guild):
@@ -214,12 +227,16 @@ class TokenSpam:
             for t, uid in content_token_spam_map[key]:
                 user_blocked_until[uid] = now + BLOCK_DURATION
             await Notifier(message).purge_user_messages(alert_type="token")
+            try:
+                await message.author.timeout(duration=timeout_duration, reason="Token/Webhookスパム検知による自動タイムアウト")
+            except Exception:
+                pass
             return True
         return False
 
 class TimebaseSpam:
     @staticmethod
-    async def check_and_block_timebase_spam(message, min_msgs=8, var_threshold=0.15, hist_threshold=0.7, max_history=15, reset_interval=60, similarity_threshold=0.85):
+    async def check_and_block_timebase_spam(message, min_msgs=8, var_threshold=0.15, hist_threshold=0.7, max_history=15, reset_interval=60, similarity_threshold=0.85, timeout_duration: int = DEFAULT_TIMEOUT_DURATION):
         # AntiCheat全体が無効な場合は処理しない
         from .config import AntiCheatConfig
         if not await AntiCheatConfig.is_enabled(message.guild):
@@ -255,6 +272,10 @@ class TimebaseSpam:
                 if var < var_threshold:
                     user_blocked_until[uid] = now + BLOCK_DURATION
                     await Notifier(message).purge_user_messages(alert_type="timebase")
+                    try:
+                        await message.author.timeout(duration=timeout_duration, reason="タイムベーススパム検知による自動タイムアウト")
+                    except Exception:
+                        pass
                     return True
         return False
 

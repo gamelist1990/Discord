@@ -7,7 +7,7 @@ class Notifier:
 
     async def send_alert_notification(self, alert_type="text", deleted_count=0):
         """
-        Alert通知チャンネルにスパム検知のアラートを送信
+        Alert通知チャンネルにスパム検知のアラートを送信し、該当ユーザーにタイムアウト罰則も実施
         """
         try:
             # AntiCheatConfigを使用してAlert通知チャンネル設定を取得
@@ -76,7 +76,7 @@ class Notifier:
             # アラート送信
             await alert_channel.send(embed=embed)
             print(f"[miniAnti] Alert sent to #{alert_channel.name}: user={self.message.author} type={alert_type}")
-            
+
         except Exception as e:
             print(f"[miniAnti] Failed to send alert notification: {e}")
 

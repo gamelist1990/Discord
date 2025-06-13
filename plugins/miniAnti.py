@@ -1,5 +1,3 @@
-
-
 from plugins.antiModule.commands import setup_anti_commands
 from plugins.antiModule.spam import *
 
@@ -18,7 +16,7 @@ def setup(bot):
             except:
                 pass
             return
-        # ブロック中ならタイムアウトを活用し削除
+        # ブロック中なら削除
         if await Block.is_user_blocked(message):
             try:
                 await message.delete()
