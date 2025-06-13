@@ -1,7 +1,7 @@
 {
   "1069498529866842173": {
     "AntiCheat": {
-      "alert_channel": null,
+      "alert_channel": 1383100730847658054,
       "bypass_role": 1069498529866842174,
       "enabled": true,
       "detection_settings": {

@@ -45,7 +45,7 @@ def setup_anti_commands(bot):
         detection_status.append(f"📝 テキストスパム: {'✅ 有効' if detection['text_spam'] else '❌ 無効'}")
         detection_status.append(f"🖼️ 画像スパム: {'✅ 有効' if detection['image_spam'] else '❌ 無効'}")
         detection_status.append(f"📢 メンションスパム: {'✅ 有効' if detection['mention_spam'] else '❌ 無効'}")
-        detection_status.append(f"🚨 トークン/Webhookスパム: {'✅ 有効' if detection['token_spam'] else '❌ 無効'}")
+        detection_status.append(f"🚨 cl/Webhookスパム: {'✅ 有効' if detection['token_spam'] else '❌ 無効'}")
         detection_status.append(f"⏰ タイムベーススパム: {'✅ 有効' if detection['timebase_spam'] else '❌ 無効'}")
         
         embed.add_field(
