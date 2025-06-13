@@ -55,6 +55,7 @@ user_time_intervals = {}
 TOKEN_SPAM_WINDOW = 5
 TOKEN_SPAM_THRESHOLD = 3
 content_token_spam_map = {}
+TOKEN_SPAM_SIMILARITY_THRESHOLD = 0.85  # 類似度しきい値
 
 def _now():
     return int(time.time())
@@ -198,33 +199,37 @@ class MentionSpam:
 class TokenSpam:
     @staticmethod
     async def check_and_block_token_spam(message, timeout_duration: int = DEFAULT_TIMEOUT_DURATION):
-        # AntiCheat全体が無効な場合は処理しない
         from .config import AntiCheatConfig
         if not await AntiCheatConfig.is_enabled(message.guild):
             return False
-        
-        # トークン/Webhookスパム検知が無効な場合は処理しない
         if not await AntiCheatConfig.is_detection_enabled(message.guild, "token_spam"):
             return False
-        
         if await MiniAntiBypass.should_bypass(message):
             return False
         now = _now()
         content = message.content
         if not content:
             return False
-        # Webhook/Tokenスパム: 同一内容が短時間に複数人から
-        key = (message.guild.id, content)
-        if key not in content_token_spam_map:
-            content_token_spam_map[key] = deque()
-        content_token_spam_map[key].append((now, message.author.id))
+
+        # 類似度でグループ化
+        matched_key = None
+        for (gid, prev_content), entries in content_token_spam_map.items():
+            if gid == message.guild.id:
+                similarity = difflib.SequenceMatcher(None, prev_content, content).ratio()
+                if similarity >= TOKEN_SPAM_SIMILARITY_THRESHOLD:
+                    matched_key = (gid, prev_content)
+                    break
+        if matched_key is None:
+            matched_key = (message.guild.id, content)
+            content_token_spam_map[matched_key] = deque()
+        content_token_spam_map[matched_key].append((now, message.author.id))
         # 古い履歴を削除
-        while content_token_spam_map[key] and now - content_token_spam_map[key][0][0] > TOKEN_SPAM_WINDOW:
-            content_token_spam_map[key].popleft()
-        # 3人以上が同一内容を短時間で送信
-        user_ids = set(uid for t, uid in content_token_spam_map[key])
+        while content_token_spam_map[matched_key] and now - content_token_spam_map[matched_key][0][0] > TOKEN_SPAM_WINDOW:
+            content_token_spam_map[matched_key].popleft()
+        # 3人以上が同一内容または高類似度内容を短時間で送信
+        user_ids = set(uid for t, uid in content_token_spam_map[matched_key])
         if len(user_ids) >= TOKEN_SPAM_THRESHOLD:
-            for t, uid in content_token_spam_map[key]:
+            for t, uid in content_token_spam_map[matched_key]:
                 user_blocked_until[uid] = now + BLOCK_DURATION
             await Notifier(message).purge_user_messages(alert_type="token")
             try:
