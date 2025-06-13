@@ -1,0 +1,16 @@
+{
+  "1069498529866842173": {
+    "AntiCheat": {
+      "alert_channel": 1382894688431771768,
+      "bypass_role": null,
+      "enabled": true,
+      "detection_settings": {
+        "text_spam": true,
+        "image_spam": true,
+        "mention_spam": true,
+        "token_spam": true,
+        "timebase_spam": true
+      }
+    }
+  }
+}

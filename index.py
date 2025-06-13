@@ -122,6 +122,19 @@ def api_bot_status():
         "last_isBot_update": patch['timestamp']
     })
 
+@app.route('/database')
+def get_database():
+    access_key = os.environ.get('Key')
+    req_key = request.args.get('Key')
+    if access_key and req_key != access_key:
+        return jsonify({'error': 'Forbidden'}), 403
+    try:
+        with open('database.json', 'r', encoding='utf-8') as f:
+            data = f.read()
+        return app.response_class(data, mimetype='application/json')
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 def registerFlask(app, bot_instance):
     """
     Flask拡張APIの登録を一元化する関数。
