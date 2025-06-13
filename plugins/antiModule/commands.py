@@ -91,7 +91,7 @@ def setup_anti_commands(bot):
         if not isAdmin(str(ctx.author.id), str(ctx.guild.id), config):
             await ctx.send("管理者権限が必要です。"); return
         """指定ユーザーのblock/タイムアウトを解除"""
-        await Block.handle_unblock(user_id)
+        await Block.handle_unblock(user_id, ctx.guild)
         await ctx.send(f"ユーザー <@{user_id}> のブロック/タイムアウトを解除しました。")
 
     @anti.command()
@@ -103,9 +103,32 @@ def setup_anti_commands(bot):
         if not seconds:
             await ctx.send("期間指定が不正です。例: 1m, 2h, 3d, 10s")
             return
-        from .spam import user_blocked_until
+        from .spam import user_blocked_until, Block
+        from datetime import timedelta
         user_blocked_until[user_id] = int(discord.utils.utcnow().timestamp()) + seconds
-        await ctx.send(f"ユーザー <@{user_id}> を {duration} ブロックしました。")
+        # タイムアウトも適用
+        member = None
+        try:
+            member = await ctx.guild.fetch_member(int(user_id))
+            until = discord.utils.utcnow() + timedelta(seconds=seconds)
+            if hasattr(member, 'timeout'):
+                await member.timeout(until, reason="管理者による手動ブロック")
+        except Exception as e:
+            print(f"[anti block] Timeout失敗: {user_id} {e}")
+        await ctx.send(f"ユーザー <@{user_id}> を {duration} ブロックしました。\n直近1時間以内のメッセージを安全に削除します…")
+        # 直近1時間以内のメッセージ削除（ratelimit安全設計）
+        try:
+            from .notifier import Notifier
+            dummy_msg = ctx.message
+            if member is not None:
+                dummy_msg.author = member
+            else:
+                dummy_msg.author = ctx.guild.get_member(user_id)
+            dummy_msg.guild = ctx.guild
+            dummy_msg.channel = ctx.channel
+            await Notifier(dummy_msg).purge_user_messages(alert_type="manual")
+        except Exception as e:
+            print(f"[anti block] メッセージ削除失敗: {user_id} {e}")
 
     @anti.command()
     async def list(ctx):

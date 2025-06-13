@@ -1,7 +1,7 @@
 {
   "1069498529866842173": {
     "AntiCheat": {
-      "alert_channel": 1382894688431771768,
+      "alert_channel": null,
       "bypass_role": 1069498529866842174,
       "enabled": true,
       "detection_settings": {
@@ -31,6 +31,20 @@
     "AntiCheat": {
       "alert_channel": null,
       "bypass_role": 1380114633087783002,
+      "enabled": true,
+      "detection_settings": {
+        "text_spam": true,
+        "image_spam": true,
+        "mention_spam": true,
+        "token_spam": true,
+        "timebase_spam": true
+      }
+    }
+  },
+  "1304404938138320926": {
+    "AntiCheat": {
+      "alert_channel": 1315126004368539648,
+      "bypass_role": null,
       "enabled": true,
       "detection_settings": {
         "text_spam": true,

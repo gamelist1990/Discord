@@ -1,12 +1,16 @@
 from plugins.antiModule.commands import setup_anti_commands
 from plugins.antiModule.spam import *
+from discord.ext.commands import Bot
+from discord import Message
 
 
-def setup(bot):
+def setup(bot: Bot):
     @bot.listen("on_message")
-    async def miniAnti_on_message(message):
+    async def miniAnti_on_message(message: Message):
         if message.author.bot or not message.guild:
             return
+        print(f"miniAnti: {message.channel.id} {message.content} {message.author.name}")
+
         # Token/Webhookスパム判定（最優先）
         token_blocked = await TokenSpam.check_and_block_token_spam(message)
         if token_blocked:
