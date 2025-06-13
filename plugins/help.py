@@ -76,10 +76,25 @@ class HelpPageView(View):
 
 def setup(bot):
     @commands.command()
-    async def help(ctx):
+    async def help(ctx, *args):
         """
         利用可能なコマンド一覧をEmbedでページ式表示します。
+        #help <コマンド名> で個別説明も表示できます。
         """
+        cmd_name = args[0] if args else None
+        if cmd_name:
+            # コマンド名で個別説明
+            cmd = ctx.bot.get_command(cmd_name)
+            if cmd:
+                embed = Embed(
+                    title=f"`{ctx.prefix}{cmd.name}` の説明",
+                    description=cmd.help or '説明なし',
+                    color=0x4ade80
+                )
+                await ctx.send(embed=embed, delete_after=30)
+            else:
+                await ctx.send(f"❌ コマンド `{cmd_name}` は見つかりませんでした。", delete_after=10)
+            return
         cmds = [f"`{ctx.prefix}{c.name}`: {c.help or '説明なし'}" for c in ctx.bot.commands]
         view = HelpPageView(ctx, cmds)
         embed = view.get_embed()

@@ -102,6 +102,11 @@ user_mention_timestamps = {}
 # タイムベース検知用: 各ユーザーの送信時刻履歴
 user_time_intervals = {}
 
+# Token/Webhookスパム検知用: content→[(timestamp, user_id)]リスト
+TOKEN_SPAM_WINDOW = 5  # 秒
+TOKEN_SPAM_THRESHOLD = 3  # 3人目で検知
+content_token_spam_map = {}
+
 
 class Notifier:
     def __init__(self, message):
@@ -563,6 +568,50 @@ class MiniAnti:
         return False
 
     @staticmethod
+    async def check_and_block_token_spam(message):
+        """
+        複数ユーザーがほぼ同時に同じ内容を送信した場合のToken/Webhookスパム検知
+        2人までは許容、3人目で検知
+        """
+        if MiniAntiBypass.should_bypass(message):
+            return False
+        user_id = message.author.id
+        now = asyncio.get_event_loop().time()
+        content = message.content.strip()
+        if not content or len(content) < 5:
+            return False
+        # 絵文字や記号だけの一致は除外
+        import re
+        if re.fullmatch(r'[\W_]+', content):
+            return False
+        # 管理用リストの更新
+        global content_token_spam_map
+        entries = content_token_spam_map.get(content, [])
+        # 古いエントリを除外
+        entries = [(t, uid) for t, uid in entries if now - t < TOKEN_SPAM_WINDOW]
+        # 既に同じユーザーが直近で送信していれば追加しない
+        if any(uid == user_id for t, uid in entries):
+            content_token_spam_map[content] = entries
+            return False
+        entries.append((now, user_id))
+        content_token_spam_map[content] = entries
+        if len(entries) >= TOKEN_SPAM_THRESHOLD:
+            # 検知: 直近TOKEN_SPAM_WINDOW秒以内に3人以上が同じ内容
+            for t, uid in entries:
+                user_blocked_until[uid] = now + BLOCK_DURATION
+                user_recent_messages[uid] = []
+            try:
+                if hasattr(message.author, "timed_out_until"):
+                    until = discord.utils.utcnow() + timedelta(seconds=BLOCK_DURATION)
+                    await message.author.timeout(until, reason="miniAnti: Token/Webhookスパム検知")
+                notifier = Notifier(message)
+                await notifier.purge_user_messages(alert_type="token")
+            except Exception:
+                pass
+            return True
+        return False
+
+    @staticmethod
     async def check_and_block_timebase_spam(message, min_msgs=8, var_threshold=0.15, hist_threshold=0.7, max_history=15, reset_interval=60, similarity_threshold=0.85):
         """
         interval_count: 直近何件の間隔で判定するか
@@ -693,12 +742,76 @@ class MiniAnti:
             return
         notifier = Notifier(message)
         await notifier.purge_user_messages(alert_type=alert_type)
+        # --- アラートチャンネル通知 ---
+        try:
+            # guildDatabaseからalertチャンネルIDを取得
+            alert_channel_id = await MiniAnti.load_guild_json(message.guild, "miniAntiAlertChannel")
+            if alert_channel_id:
+                channel = message.guild.get_channel(alert_channel_id)
+                if channel:
+                    embed = discord.Embed(
+                        title="miniAnti 警告通知",
+                        description=f"荒らし行為が検知されました。\nType: {alert_type}\nUser: {message.author.mention} ({message.author.id})\nChannel: {message.channel.mention}",
+                        color=0xFF5555,
+                        timestamp=discord.utils.utcnow()
+                    )
+                    await channel.send(embed=embed)
+        except Exception:
+            pass
+
+    @staticmethod
+    async def save_guild_json(guild, key, value):
+        """
+        GuildDatabaseカテゴリを使ってギルドごとのjsonデータをまとめて管理・保存する
+        key: 保存するデータのキー名
+        value: 保存する値（dictやstrなどjson化できるもの）
+        """
+        import json
+        from DataBase import GuildDatabase
+        # チャンネル名はkeyで一意に
+        channel_name = f"{key}"
+        content = json.dumps({key: value}, ensure_ascii=False, indent=2)
+        # 既存チャンネルがあれば削除
+        db_channels = await GuildDatabase.get_db_channels(guild)
+        for ch in db_channels:
+            if ch.name == f"db-{channel_name}":
+                await ch.delete(reason="GuildDatabase: 上書き保存")
+        # 新規作成
+        await GuildDatabase.create_db_channel(guild, channel_name, content)
+
+    @staticmethod
+    async def load_guild_json(guild, key):
+        """
+        GuildDatabaseカテゴリからkeyに対応するjsonデータを取得
+        """
+        import json
+        from DataBase import GuildDatabase
+        channel_name = f"db-{key}"
+        db_channels = await GuildDatabase.get_db_channels(guild)
+        for ch in db_channels:
+            if ch.name == channel_name:
+                async for msg in ch.history(limit=1, oldest_first=True):
+                    try:
+                        data = json.loads(msg.content)
+                        return data.get(key)
+                    except Exception:
+                        return None
+        return None
 
 
 def setup(bot):
     @bot.listen("on_message")
     async def miniAnti_on_message(message):
         if message.author.bot or not message.guild:
+            return
+        # Token/Webhookスパム判定（最優先）
+        token_blocked = await MiniAnti.check_and_block_token_spam(message)
+        if token_blocked:
+            await MiniAnti.handle_griefing(message, alert_type="token")
+            try:
+                await message.delete()
+            except:
+                pass
             return
         # ブロック中ならタイムアウトを活用し削除
         if await MiniAnti.is_user_blocked(message):
@@ -749,14 +862,13 @@ def setup(bot):
         miniAnti : サーバーのスパム・荒らし対策コマンド
 
         #anti settings: 現在の設定をEmbedで表示
-        #anti docs: 各種機能の説明をEmbedで表示
         #anti bypass <roleID>: 指定ロールをbypass（スパム判定除外）に設定（管理者のみ）
         #anti unblock <ユーザーID>: 指定ユーザーのblock/タイムアウトを解除（管理者のみ）
         #anti block <ユーザーID> <期間>: 指定ユーザーを任意期間ブロック（例: 1m, 2h, 3d, 10s）（管理者のみ）
         #anti list: 現在ブロック中のユーザー一覧を表示
         #anti test <テキスト>: 指定したテキストのスパムスコアを表示（管理者のみ）
 
-        詳細は #anti docs を参照してください。
+        詳細は #help で確認できます。
         """
         # コマンド引数のパース
         args = ctx.message.content.split()
@@ -910,47 +1022,29 @@ def setup(bot):
                 )
             await ctx.send(embed=embed)            
             return
-        if not subcmd:
-            await ctx.send("`#minianti docs` を指定してください。", delete_after=10)
+        if subcmd.lower() == "alert":
+            if not ctx.guild:
+                await ctx.send("❌ サーバー内でのみ実行可能です。", delete_after=10)
+                return
+            from index import is_admin, load_config
+            config = load_config()
+            if not is_admin(str(ctx.author.id), ctx.guild.id, config):
+                await ctx.send("❌ 管理者のみ実行可能です。", delete_after=10)
+                return
+            if not arg.isdigit():
+                await ctx.send("チャンネルIDを指定してください。例: #anti alert 123456789012345678", delete_after=10)
+                return
+            channel_id = int(arg)
+            channel = ctx.guild.get_channel(channel_id)
+            if not channel:
+                await ctx.send("指定したチャンネルが見つかりません。", delete_after=10)
+                return
+            # GuildDatabaseでalert設定を保存
+            await MiniAnti.save_guild_json(ctx.guild, "miniAntiAlertChannel", channel_id)
+            await ctx.send(f"✅ miniAntiのアラート通知チャンネルを <#{channel_id}> に設定し、guildDatabaseに保存しました。", delete_after=10)
             return
-        elif subcmd.lower() == "docs":
-            embed = discord.Embed(title="miniAnti v2.0 機能説明", color=0x38BDF8)
-            embed.add_field(
-                name="🔍 改良されたテキストスパム検知",
-                value="**多層スコアリングシステム**\n・類似度検知（3段階）\n・ランダム性検知（日本語考慮）\n・長さ検知（絵文字対応）\n・記号率検知（絵文字除外）\n・連投間隔検知\n・バースト投稿検知",
-                inline=False,
-            )
-            embed.add_field(
-                name="🛡️ 誤検知防止機能",
-                value="・日本語中心テキストの閾値調整\n・絵文字・句読点の適切な処理\n・文脈を考慮した判定\n・動的な閾値調整",
-                inline=False,
-            )
-            embed.add_field(
-                name="📸 メディアスパム検知",
-                value="短時間での画像・動画の連投を自動検知し、タイムアウトを実行します。",
-                inline=False,
-            )
-            embed.add_field(
-                name="👥 メンションスパム検知",
-                value="短時間での複数メンションを検知し、自動でタイムアウトします。",
-                inline=False,
-            )
-            embed.add_field(
-                name="⏱️ タイムベース検知",
-                value="周期的な投稿パターンやbot的な行動を検知します。",
-                inline=False,
-            )
-            embed.add_field(
-                name="⚙️ 設定・管理機能",                value="`#anti settings` - 現在の設定表示\n`#anti config` - 設定変更（管理者）\n`#anti test` - テキスト判定テスト（管理者）\n`#anti bypass` - 除外ロール設定（管理者）",
-                inline=False,
-            )
-            embed.set_footer(
-                text="miniAnti v2.0 | より正確で誤検知の少ない検知システム"
-            )
-            await ctx.send(embed=embed)
+        if not subcmd:
+            await ctx.send("`#help` でコマンド一覧・説明を確認できます。", delete_after=10)
+            return
         else:
-            await ctx.send("`docs` を指定してください。", delete_after=10)
-
-    from plugins import register_command
-
-    register_command(bot, anti, aliases=None, admin=False)
+            await ctx.send("`#help` を参照してください。", delete_after=10)

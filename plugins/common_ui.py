@@ -50,7 +50,7 @@ class ModalInputView(View):
                  allowed_user_id: Optional[int] = None,
                  on_button_embed: Optional[Union[discord.Embed, Callable]] = None,
                  on_submit_embed: Optional[Union[discord.Embed, Callable]] = None):
-        super().__init__(timeout=60)
+        super().__init__(timeout=300)  # タイムアウトを5分(300秒)に設定
         self.add_item(self.ModalButton(self, label, style, button_emoji, button_disabled))
         self.modal_title = modal_title
         self.placeholder = placeholder
@@ -67,6 +67,16 @@ class ModalInputView(View):
         self.allowed_user_id = allowed_user_id
         self.on_button_embed = on_button_embed
         self.on_submit_embed = on_submit_embed
+        self.message: discord.Message = None  # type: ignore
+
+    async def on_timeout(self):
+        # タイムアウト時にViewがアタッチされたメッセージを削除
+        import discord
+        if self.message and isinstance(self.message, discord.Message):
+            try:
+                await self.message.delete()
+            except Exception:
+                pass
 
     def _resolve_text_style(self):
         # discord.TextStyle/discord.InputTextStyleのバリエーション対応
@@ -86,6 +96,7 @@ class ModalInputView(View):
             super().__init__(label=label, style=style, emoji=emoji, disabled=disabled)
             self.parent = parent
         async def callback(self, interaction: discord.Interaction):
+            self.parent.message = getattr(interaction, "message", None)  # メッセージをViewにセット
             if self.parent.allowed_user_id is not None and interaction.user.id != self.parent.allowed_user_id:
                 await interaction.response.send_message("❌ このボタンはコマンド実行者のみ押せます。", ephemeral=True)
                 return

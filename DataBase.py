@@ -5,6 +5,8 @@ from threading import Lock
 from datetime import datetime
 import threading
 import time
+import discord
+import asyncio
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_FILE = os.path.join(BASE_DIR, "database.json")
@@ -113,137 +115,83 @@ def delete_channel_config(guild_id, channel_id):
         del channels[str(channel_id)]
         _save_db(db)
 
-# チャンネルトピックJSON管理機能（最大1000文字対応）
-def create_topic_json_base():
-    """チャンネルトピック用の基本JSON構造を作成"""
-    return {
-        "v": 1,  # バージョン（短縮キー）
-        "d": {}  # データ（短縮キー）
-    }
+# --- GuildDatabaseカテゴリ管理 ---
+class GuildDatabase:
+    CATEGORY_NAME = "📃｜DataBase"
+    CHANNEL_PREFIX = "db-"
+    RATE_LIMIT_SECONDS = 2  # チャンネル作成・削除の最小間隔
+    _last_action = {}
 
-def encode_topic_json(data, max_length=1000):
-    """データをチャンネルトピック用の圧縮JSONに変換"""
-    try:
-        # 基本構造にデータを追加
-        topic_data = create_topic_json_base()
-        topic_data["d"] = data
-        
-        # JSON文字列に変換（スペースなし）
-        json_str = json.dumps(topic_data, ensure_ascii=False, separators=(',', ':'))
-        
-        # 文字数制限チェック
-        if len(json_str) > max_length:
-            # データが大きすぎる場合は警告
-            raise ValueError(f"データが大きすぎます: {len(json_str)}文字 (上限: {max_length}文字)")
-        
-        return json_str
-    except Exception as e:
-        raise ValueError(f"JSON変換エラー: {str(e)}")
+    @classmethod
+    async def ensure_category(cls, guild: discord.Guild):
+        category = discord.utils.get(guild.categories, name=cls.CATEGORY_NAME)
+        bot_member = guild.me
+        if not category:
+            overwrites = {}
+            if guild.default_role is not None:
+                overwrites[guild.default_role] = discord.PermissionOverwrite(view_channel=False)
+            category = await guild.create_category(
+                name=cls.CATEGORY_NAME,
+                overwrites=overwrites,  # type: ignore
+                reason="GuildDatabaseカテゴリ自動作成"
+            )
+            # botに権限を付与
+            if bot_member:
+                await category.set_permissions(bot_member, view_channel=True, send_messages=True, manage_channels=True, manage_permissions=True)
+        else:
+            # 権限を再設定
+            overwrites = dict(category.overwrites)
+            overwrites[guild.default_role] = discord.PermissionOverwrite(view_channel=False)
+            await category.edit(overwrites=overwrites, reason="GuildDatabaseカテゴリ権限修正")
+            if bot_member:
+                await category.set_permissions(bot_member, view_channel=True, send_messages=True, manage_channels=True, manage_permissions=True)
+        return category
 
-def decode_topic_json(json_str):
-    """チャンネルトピックのJSONを解析してデータを取得"""
-    try:
-        if not json_str or json_str.strip() == "":
-            return {}
-        
-        # JSON解析
-        data = json.loads(json_str)
-        
-        # バージョンチェック
-        if not isinstance(data, dict) or "v" not in data:
-            # 古い形式またはJSON以外の場合は空のデータを返す
-            return {}
-        
-        # データを取得
-        return data.get("d", {})
-    except json.JSONDecodeError:
-        # JSON形式でない場合は空のデータを返す
-        return {}
-    except Exception:
-        return {}
+    @classmethod
+    async def clearAll(cls, guild: discord.Guild):
+        """カテゴリ内の全チャンネルを削除（RateLimit対策あり）"""
+        category = await cls.ensure_category(guild)
+        now = asyncio.get_event_loop().time()
+        last = cls._last_action.get(guild.id, 0)
+        if now - last < cls.RATE_LIMIT_SECONDS:
+            await asyncio.sleep(cls.RATE_LIMIT_SECONDS - (now - last))
+        for channel in list(category.channels):
+            try:
+                await channel.delete(reason="GuildDatabase全削除")
+                await asyncio.sleep(cls.RATE_LIMIT_SECONDS)
+            except Exception:
+                pass
+        cls._last_action[guild.id] = asyncio.get_event_loop().time()
 
-def update_topic_data(current_topic, key, value, max_length=1000):
-    """チャンネルトピックの特定のキーを更新"""
-    try:
-        # 現在のデータを取得
-        current_data = decode_topic_json(current_topic)
-        
-        # データを更新
-        current_data[key] = value
-        
-        # 新しいJSON文字列を作成
-        return encode_topic_json(current_data, max_length)
-    except Exception as e:
-        raise ValueError(f"トピック更新エラー: {str(e)}")
+    @classmethod
+    async def create_db_channel(cls, guild: discord.Guild, name: str, content: str = ""):
+        """カテゴリ内に新しいDBチャンネルを作成（RateLimit対策あり）"""
+        category = await cls.ensure_category(guild)
+        now = asyncio.get_event_loop().time()
+        last = cls._last_action.get(guild.id, 0)
+        if now - last < cls.RATE_LIMIT_SECONDS:
+            await asyncio.sleep(cls.RATE_LIMIT_SECONDS - (now - last))
+        channel = await guild.create_text_channel(
+            name=f"{cls.CHANNEL_PREFIX}{name}",
+            category=category,
+            reason="GuildDatabaseチャンネル自動生成",
+            overwrites={
+                guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True, manage_permissions=True)
+            }
+        )
+        if content:
+            try:
+                await channel.send(content)
+            except Exception:
+                pass
+        cls._last_action[guild.id] = asyncio.get_event_loop().time()
+        return channel
 
-def get_topic_value(topic_json, key, default=None):
-    """チャンネルトピックから特定のキーの値を取得"""
-    try:
-        data = decode_topic_json(topic_json)
-        return data.get(key, default)
-    except Exception:
-        return default
-
-def remove_topic_key(current_topic, key, max_length=1000):
-    """チャンネルトピックから特定のキーを削除"""
-    try:
-        # 現在のデータを取得
-        current_data = decode_topic_json(current_topic)
-        
-        # キーが存在する場合は削除
-        if key in current_data:
-            del current_data[key]
-        
-        # 新しいJSON文字列を作成
-        return encode_topic_json(current_data, max_length)
-    except Exception as e:
-        raise ValueError(f"キー削除エラー: {str(e)}")
-
-def get_topic_size(json_str):
-    """チャンネルトピックのサイズを取得"""
-    return len(json_str) if json_str else 0
-
-def get_remaining_topic_space(json_str, max_length=1000):
-    """チャンネルトピックの残り容量を取得"""
-    current_size = get_topic_size(json_str)
-    return max_length - current_size
-
-def is_topic_data_valid(json_str, max_length=1000):
-    """チャンネルトピックのデータが有効かチェック"""
-    try:
-        if get_topic_size(json_str) > max_length:
-            return False
-        decode_topic_json(json_str)  # JSON解析テスト
-        return True
-    except Exception:
-        return False
-
-def create_optimized_topic_data(data_dict, max_length=1000):
-    """効率的なチャンネルトピックデータを作成（キー名を短縮）"""
-    try:
-        # よく使用されるキー名の短縮マッピング
-        key_mapping = {
-            "welcome_message": "wm",
-            "auto_role": "ar", 
-            "moderator_role": "mr",
-            "log_channel": "lc",
-            "prefix": "px",
-            "level": "lv",
-            "points": "pt",
-            "last_active": "la",
-            "permissions": "pm",
-            "settings": "st"
-        }
-        
-        # キー名を短縮
-        optimized_data = {}
-        for key, value in data_dict.items():
-            short_key = key_mapping.get(key, key[:3])  # マッピングがなければ3文字に短縮
-            optimized_data[short_key] = value
-        
-        return encode_topic_json(optimized_data, max_length)
-    except Exception as e:
-        raise ValueError(f"最適化エラー: {str(e)}")
+    @classmethod
+    async def get_db_channels(cls, guild: discord.Guild):
+        category = await cls.ensure_category(guild)
+        return [ch for ch in category.channels if isinstance(ch, discord.TextChannel) and ch.name.startswith(cls.CHANNEL_PREFIX)]
 
 # === APIキー管理 ===
 API_KEY_DB_KEY = "api_keys"
@@ -308,5 +256,44 @@ def delete_api_key(api_key):
     if api_key in api_keys:
         del api_keys[api_key]
         _save_db(db)
+
+async def ensure_guild_database_category(guild: discord.Guild, bot_user: discord.Member, role_name: str = "DataBaseAccess"):
+    """
+    ギルドに専用カテゴリ「📃｜DataBase」とアクセス用ロールを作成し、botに付与。
+    カテゴリの閲覧権限をそのロールのみに設定し、通知を全てoffにする。
+    戻り値: (category, role)
+    """
+    # ロール作成または取得
+    role = discord.utils.get(guild.roles, name=role_name)
+    if not role:
+        role = await guild.create_role(name=role_name, reason="DataBaseアクセス用自動ロール")
+    # botにロールを付与
+    if role not in bot_user.roles:
+        await bot_user.add_roles(role, reason="DataBaseアクセス用ロール自動付与")
+    # カテゴリ作成または取得
+    category = discord.utils.get(guild.categories, name="📃｜DataBase")
+    if not category:
+        overwrites = {}
+        default_role_obj = discord.utils.get(guild.roles, id=guild.default_role.id)
+        role_obj = discord.utils.get(guild.roles, id=role.id)
+        if default_role_obj is not None:
+            overwrites[default_role_obj] = discord.PermissionOverwrite(view_channel=False)
+        if role_obj is not None:
+            overwrites[role_obj] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+        category = await guild.create_category(name="📃｜DataBase", overwrites=overwrites, reason="DataBase専用カテゴリ自動作成")
+    else:
+        # 既存カテゴリの権限を修正 
+        overwrites = category.overwrites
+        overwrites[guild.default_role] = discord.PermissionOverwrite(view_channel=False)
+        overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+        await category.edit(overwrites=overwrites, reason="DataBaseカテゴリ権限修正")
+    # 通知設定はAPIから直接は変更不可。必要なら案内メッセージを送信
+    for channel in category.channels:
+        try:
+            if isinstance(channel, discord.TextChannel):
+                await channel.edit(slowmode_delay=0, reason="DataBaseカテゴリ通知抑制")
+        except Exception:
+            pass
+    return category, role
 
 
