@@ -81,23 +81,28 @@ class BaseSpam:
 
     @staticmethod
     async def apply_slowmode(message, seconds, reason):
-        """slowmodeを適用し、元の値を保存"""
+        """slowmodeを適用し、元の値を保存（既にslowmodeが設定されている場合も正確に記録）"""
         guild_id = message.guild.id
         channel_id = message.channel.id
         key = (guild_id, channel_id)
-        if key not in BaseSpam._original_slowmode:
-            try:
-                orig_value = getattr(message.channel, "slowmode_delay", None)
-                if orig_value is not None:
+        try:
+            # 既存のslowmode値を常に取得し記録
+            orig_value = getattr(message.channel, "slowmode_delay", None)
+            if orig_value is not None:
+                # まだ記録されていない場合のみ保存
+                if key not in BaseSpam._original_slowmode:
                     BaseSpam._original_slowmode[key] = orig_value
-            except Exception:
-                pass
+                # 既に記録済みだが値が変わっていれば最新値で上書き
+                elif BaseSpam._original_slowmode[key] != orig_value:
+                    BaseSpam._original_slowmode[key] = orig_value
+        except Exception:
+            pass
         await message.channel.edit(slowmode_delay=seconds, reason=reason)
         BaseSpam._slowmode_apply_history[key] = int(datetime.now(timezone.utc).timestamp())
 
     @staticmethod
     async def reset_slowmode_if_no_spam(channel, author_id, guild_id, delay=60):
-        """一定時間後に荒らしがなければslowmodeを元に戻す"""
+        """一定時間後に荒らしがなければslowmodeを元に戻す（必ず記録済み値に戻す）"""
         await asyncio.sleep(delay)
         now_aware = datetime.now(timezone.utc)
         recent_spam = False
@@ -111,7 +116,8 @@ class BaseSpam:
                     break
         if not recent_spam:
             try:
-                orig = BaseSpam._original_slowmode.get((guild_id, channel.id), 0)
+                key = (guild_id, channel.id)
+                orig = BaseSpam._original_slowmode.get(key, 0)
                 print(f"[INFO] Resetting slowmode to {orig}s for channel: {getattr(channel, 'id', None)} (guild: {guild_id}, no spam detected in last 1min)")
                 await channel.edit(slowmode_delay=orig, reason="荒らし収束による自動slowmode解除")
             except Exception as e:
