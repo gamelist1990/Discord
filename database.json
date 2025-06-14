@@ -16,7 +16,7 @@
   "890315487962095637": {
     "AntiCheat": {
       "alert_channel": 1360665897068527946,
-      "bypass_role": 1296378637410504715,
+      "bypass_role": 1340318302936764478,
       "enabled": true,
       "detection_settings": {
         "text_spam": true,
