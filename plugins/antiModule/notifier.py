@@ -25,17 +25,24 @@ class Notifier:
                 # チャンネルが見つからない場合は何もしない
                 print(f"[miniAnti] Alert channel {alert_channel_id} not found")
                 return
-            
-            # アラート種別に応じた色とアイコンを設定
+              # アラート種別に応じた色とアイコンを設定
             alert_config = {
                 "text": {"color": 0xFF6B6B, "icon": "📝", "title": "テキストスパム検知"},
                 "image": {"color": 0xFFB347, "icon": "🖼️", "title": "画像スパム検知"},
                 "mention": {"color": 0xFF69B4, "icon": "📢", "title": "メンションスパム検知"},
                 "token": {"color": 0xFF0000, "icon": "🚨", "title": "トークン/Webhookスパム検知"},
-                "timebase": {"color": 0xFFA500, "icon": "⏰", "title": "タイムベーススパム検知"}
-            }
+                "timebase": {"color": 0xFFA500, "icon": "⏰", "title": "タイムベーススパム検知"},
+                "mass_text": {"color": 0x8B0000, "icon": "🚨📝", "title": "大人数テキストスパム検知"},
+                "mass_image": {"color": 0xFF4500, "icon": "🚨🖼️", "title": "大人数画像スパム検知"},
+                "mass_mention": {"color": 0xDC143C, "icon": "🚨📢", "title": "大人数メンションスパム検知"},
+                "mass_token": {"color": 0x800000, "icon": "🚨⚠️", "title": "大人数トークンスパム検知"},
+                "mass_timebase": {"color": 0x8B4513, "icon": "🚨⏰", "title": "大人数タイムベーススパム検知"},
+                "mass_spam": {"color": 0x000000, "icon": "🚨🔥", "title": "緊急：大人数スパム攻撃検知"}            }
             
             config = alert_config.get(alert_type, alert_config["text"])
+            
+            # 大人数スパム用の特別な処理
+            is_mass_spam = alert_type.startswith("mass_") or alert_type == "mass_spam"
             
             # アラートEmbed作成
             embed = discord.Embed(
@@ -44,38 +51,77 @@ class Notifier:
                 timestamp=discord.utils.utcnow()
             )
             
-            embed.add_field(
-                name="ユーザー",
-                value=f"{self.message.author.mention} ({self.message.author})",
-                inline=True
-            )
-            
-            embed.add_field(
-                name="チャンネル",
-                value=self.message.channel.mention,
-                inline=True
-            )
-            
-            if deleted_count > 0:
+            if is_mass_spam:
+                # 大人数スパム時は緊急度を強調
                 embed.add_field(
-                    name="削除されたメッセージ数",
-                    value=f"{deleted_count}件",
-                    inline=True
-                )
-            
-            if self.message.content and len(self.message.content) > 0:
-                content_preview = self.message.content[:100] + "..." if len(self.message.content) > 100 else self.message.content
-                embed.add_field(
-                    name="メッセージ内容",
-                    value=f"```{content_preview}```",
+                    name="⚠️ 緊急度",
+                    value="**HIGH - 大人数による組織的攻撃**",
                     inline=False
                 )
-            
-            embed.set_footer(text=f"User ID: {self.message.author.id}")
+                
+                embed.add_field(
+                    name="検知タイプ",
+                    value=f"`{alert_type}`",
+                    inline=True
+                )
+                
+                if deleted_count > 0:
+                    embed.add_field(
+                        name="処理されたメッセージ数",
+                        value=f"**{deleted_count}件**",
+                        inline=True
+                    )
+                
+                embed.add_field(
+                    name="対象チャンネル",
+                    value=self.message.channel.mention,
+                    inline=True
+                )
+                
+                embed.add_field(
+                    name="実施済み対処",
+                    value="• 強化slowmode適用\n• 関与ユーザー一括タイムアウト\n• メッセージ一括削除",
+                    inline=False
+                )
+                
+            else:
+                # 個人スパム時の通常処理
+                embed.add_field(
+                    name="ユーザー",
+                    value=f"{self.message.author.mention} ({self.message.author})",
+                    inline=True
+                )
+                
+                embed.add_field(
+                    name="チャンネル",
+                    value=self.message.channel.mention,
+                    inline=True
+                )
+                
+                if deleted_count > 0:
+                    embed.add_field(
+                        name="削除されたメッセージ数",
+                        value=f"{deleted_count}件",
+                        inline=True
+                    )
+                
+                if self.message.content and len(self.message.content) > 0:
+                    content_preview = self.message.content[:100] + "..." if len(self.message.content) > 100 else self.message.content
+                    embed.add_field(
+                        name="メッセージ内容",
+                        value=f"```{content_preview}```",
+                        inline=False
+                    )
+                
+                embed.set_footer(text=f"User ID: {self.message.author.id}")
             
             # アラート送信
             await alert_channel.send(embed=embed)
-            print(f"[miniAnti] Alert sent to #{alert_channel.name}: user={self.message.author} type={alert_type}")
+            
+            if is_mass_spam:
+                print(f"[miniAnti] MASS SPAM Alert sent to #{alert_channel.name}: type={alert_type}, processed={deleted_count}")
+            else:
+                print(f"[miniAnti] Alert sent to #{alert_channel.name}: user={self.message.author} type={alert_type}")
 
         except Exception as e:
             print(f"[miniAnti] Failed to send alert notification: {e}")

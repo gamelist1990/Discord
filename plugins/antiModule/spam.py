@@ -235,18 +235,16 @@ class BaseSpam:
                     except Exception as e:
                         print(f"[MASS SPAM] Failed to process user {user_id}: {e}")
             except Exception as e:
-                print(f"[MASS SPAM] Error in mass spam batch processing: {e}")
-
-            # 管理者への緊急通知
+                print(f"[MASS SPAM] Error in mass spam batch processing: {e}")            # 管理者への緊急通知
             try:
                 notifier = Notifier(message)
-                # 大人数スパム時はalert_type="mass_spam"で送信、削除件数やユーザー数も渡す
-                deleted_count = sum(summary.get("user_counts", {}).values())
-                await notifier.send_alert_notification(
-                    "mass_spam", deleted_count
-                )
+                # 大人数スパム時の通知：関与ユーザー数と削除メッセージ数を含める
+                total_deleted = sum(summary.get("user_counts", {}).values())
+                
+                # 大人数スパム用の特別なalert_typeを送信
+                await notifier.send_alert_notification("mass_spam", total_deleted)
                 print(
-                    f"[MASS SPAM] Mass spam alert sent: {summary['unique_users']} users involved"
+                    f"[MASS SPAM] Mass spam alert sent: {summary['unique_users']} users involved, {total_deleted} messages processed"
                 )
             except Exception as e:
                 print(f"[MASS SPAM] Failed to send mass spam alert: {e}")
@@ -382,12 +380,12 @@ class BaseSpam:
             member = message.author  # fallback
         if not timeout_success and not timeout_skipped_for_403:
             print(f"[ERROR] Timeout could not be applied for user: {uid}")
-            return False
-        # --- メッセージ削除（条件付きで実行） ---
+            return False        # --- メッセージ削除と通知処理（条件付きで実行） ---
         # slowmodeが適用され、かつtimeout_success時のみ削除処理を実行
         if slowmode_applied and timeout_success:
 
             async def safe_purge_user_messages():
+                deleted_count = 0
                 try:
                     channel = message.channel
                     now_aware = datetime.now(timezone.utc)
@@ -400,7 +398,7 @@ class BaseSpam:
                             and (now_ts - msg.created_at.timestamp()) <= 1800
                         ):
                             messages.append(msg)
-                    deleted_count = 0
+                    
                     consecutive_429 = 0
                     # --- 一括削除を優先 ---
                     if len(messages) >= 2:
@@ -450,6 +448,16 @@ class BaseSpam:
                     print(
                         f"[DEBUG] purge_user_messages (30min) complete. Deleted: {deleted_count}"
                     )
+                    
+                    # 個人スパム時の通知処理（大人数スパム時以外）
+                    if not spam_log_aggregator.is_mass_spam_active(guild_id):
+                        try:
+                            notifier = Notifier(message)
+                            await notifier.send_alert_notification(alert_type, deleted_count)
+                            print(f"[DEBUG] Individual spam alert sent: type={alert_type}, deleted={deleted_count}")
+                        except Exception as e:
+                            print(f"[ERROR] Failed to send individual spam alert: {e}")
+                            
                 except Exception as e:
                     print(f"[ERROR] purge_user_messages failed: {e}")
 
@@ -700,17 +708,19 @@ class TokenSpam(BaseSpam):
             content_token_spam_map[matched_key]
             and now - content_token_spam_map[matched_key][0][0] > TOKEN_SPAM_WINDOW
         ):
-            content_token_spam_map[matched_key].popleft()
-        # 3人以上が同一内容または高類似度内容を短時間で送信 or uuid4が2つ以上含まれる
+            content_token_spam_map[matched_key].popleft()        # 3人以上が同一内容または高類似度内容を短時間で送信 or uuid4が2つ以上含まれる
         user_ids = set(uid for t, uid in content_token_spam_map[matched_key])
         is_mass_token_spam = len(user_ids) >= MASS_SPAM_USER_THRESHOLD
+        
         if len(user_ids) >= TOKEN_SPAM_THRESHOLD or uuid4_count >= 2:
             for t, uid in content_token_spam_map[matched_key]:
                 user_blocked_until[uid] = now + BLOCK_DURATION
-            from .notifier import Notifier
-
+            
             # 大人数Tokenスパムの場合はalert_typeを'mass_token'でblock_and_notifyを呼ぶ
             if is_mass_token_spam:
+                # mass spam ログ追加・判定
+                guild_id = message.guild.id if message.guild else None
+                spam_log_aggregator.add_spam_log(guild_id, message.author.id, "token", now)
                 await TokenSpam.block_and_notify(
                     message,
                     message.author.id,
@@ -720,14 +730,17 @@ class TokenSpam(BaseSpam):
                     "大人数Token/Webhookスパム検知による自動タイムアウト",
                 )
             else:
-                await Notifier(message).purge_user_messages(alert_type="token")
-                try:
-                    await message.author.timeout(
-                        duration=timeout_duration,
-                        reason="Token/Webhookスパム検知による自動タイムアウト",
-                    )
-                except Exception:
-                    pass
+                # 個人Tokenスパム時の処理
+                guild_id = message.guild.id if message.guild else None
+                spam_log_aggregator.add_spam_log(guild_id, message.author.id, "token", now)
+                await TokenSpam.block_and_notify(
+                    message,
+                    message.author.id,
+                    now,
+                    "token",
+                    timeout_duration,
+                    "Token/Webhookスパム検知による自動タイムアウト",
+                )
             return True
         return False
 
