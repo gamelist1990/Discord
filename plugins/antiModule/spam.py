@@ -106,27 +106,21 @@ class BaseSpam:
         BaseSpam._slowmode_apply_history[key] = int(datetime.now(timezone.utc).timestamp())
 
     @staticmethod
-    async def reset_slowmode_if_no_spam(channel, author_id, guild_id, delay=60):
+    async def reset_slowmode_if_no_spam(channel, author_id, guild_id, reset_delay=60):
         """一定時間後に荒らしがなければslowmodeを元に戻す（必ず記録済み値に戻す）"""
-        await asyncio.sleep(delay)
-        now_aware = datetime.now(timezone.utc)
-        recent_spam = False
-        check_window = 60
-        async for msg in channel.history(limit=50, oldest_first=False):
-            if msg.guild and msg.guild.id == guild_id and msg.created_at:
-                if (now_aware - msg.created_at).total_seconds() > check_window:
-                    break
-                if msg.author.id == author_id:
-                    recent_spam = True
-                    break
-        if not recent_spam:
-            try:
-                key = (guild_id, channel.id)
-                orig = BaseSpam._original_slowmode.get(key, 0)
-                print(f"[INFO] Resetting slowmode to {orig}s for channel: {getattr(channel, 'id', None)} (guild: {guild_id}, no spam detected in last 1min)")
-                await channel.edit(slowmode_delay=orig, reason="荒らし収束による自動slowmode解除")
-            except Exception as e:
-                print(f"[ERROR] Failed to reset slowmode: {e}")
+        await asyncio.sleep(reset_delay)
+        key = (guild_id, channel.id)
+        # --- 元のslowmode値を取得 ---
+        original_delay = 0
+        if hasattr(BaseSpam, "_original_slowmode"):
+            original_delay = BaseSpam._original_slowmode.get(key, 0)
+        try:
+            await channel.edit(slowmode_delay=original_delay)
+        except Exception as e:
+            print(f"[ERROR] Failed to reset slowmode: {e}")
+        # --- 一度戻したら記録を削除 ---
+        if hasattr(BaseSpam, "_original_slowmode"):
+            BaseSpam._original_slowmode.pop(key, None)
 
     @staticmethod
     async def timeout_member(member, until, reason):
@@ -296,6 +290,17 @@ class BaseSpam:
                 and hasattr(message, "guild")
                 and message.guild is not None
             ):
+                # --- 追加: 既存slowmode値を保存 ---
+                key = (message.guild.id, message.channel.id)
+                if not hasattr(BaseSpam, "_original_slowmode"):
+                    BaseSpam._original_slowmode = {}
+                # 保存されていなければ保存
+                if key not in BaseSpam._original_slowmode:
+                    try:
+                        BaseSpam._original_slowmode[key] = message.channel.slowmode_delay
+                    except Exception:
+                        BaseSpam._original_slowmode[key] = 0
+
                 guild_id = message.guild.id
                 channel_id = message.channel.id
                 key = (guild_id, channel_id)
@@ -355,10 +360,10 @@ class BaseSpam:
                 # 大人数スパム時は長めの解除時間を設定
                 reset_delay = 60  # 常に60秒で解除判定
 
-                # 一定時間後に荒らしが収まっていればslowmodeを元の値に戻す
+                # --- slowmode解除時に元の値へ戻す ---
                 task = asyncio.create_task(
                     BaseSpam.reset_slowmode_if_no_spam(
-                        message.channel, message.author.id, guild_id, reset_delay
+                        message.channel, message.author.id, message.guild.id, reset_delay
                     )
                 )
                 BaseSpam._slowmode_reset_tasks[key] = task

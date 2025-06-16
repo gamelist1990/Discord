@@ -4,7 +4,7 @@ from discord.ext import commands
 from plugins import register_command
 
 class HelpPageView(View):
-    def __init__(self, ctx, cmds, per_page=10):
+    def __init__(self, ctx, cmds, per_page=3):
         super().__init__(timeout=120)
         self.ctx = ctx
         self.cmds = cmds
@@ -39,7 +39,10 @@ class HelpPageView(View):
                     name, desc = cmd, ''
                 name = name.strip('` ')
                 desc = desc.strip()
-                # Markdownでコマンド本体を強調、説明はイタリック
+                # 説明が長い場合は省略
+                max_desc_len = 40
+                if len(desc) > max_desc_len:
+                    desc = desc[:max_desc_len] + "..."
                 embed.add_field(
                     name=f"`{name}`",
                     value=f"*{desc or '説明なし'}*",
@@ -86,6 +89,7 @@ def setup(bot):
             # コマンド名で個別説明
             cmd = ctx.bot.get_command(cmd_name)
             if cmd:
+                # 説明が長い場合も個別表示は省略しない
                 embed = Embed(
                     title=f"`{ctx.prefix}{cmd.name}` の説明",
                     description=cmd.help or '説明なし',
@@ -95,8 +99,15 @@ def setup(bot):
             else:
                 await ctx.send(f"❌ コマンド `{cmd_name}` は見つかりませんでした。", delete_after=10)
             return
-        cmds = [f"`{ctx.prefix}{c.name}`: {c.help or '説明なし'}" for c in ctx.bot.commands]
-        view = HelpPageView(ctx, cmds)
+        # 一覧表示時は説明を省略
+        cmds = []
+        max_desc_len = 20
+        for c in ctx.bot.commands:
+            desc = c.help or '説明なし'
+            if len(desc) > max_desc_len:
+                desc = desc[:max_desc_len] + "..."
+            cmds.append(f"`{ctx.prefix}{c.name}`: {desc}")
+        view = HelpPageView(ctx, cmds, per_page=3)
         embed = view.get_embed()
         await ctx.send(embed=embed, view=view)
     register_command(bot, help, aliases=['h'], admin=False)
