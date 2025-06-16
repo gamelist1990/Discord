@@ -27,7 +27,7 @@
       }
     },
     "staffRole": "1340318302936764478",
-    "alertChannel": "1384001050415071232"
+    "alertChannel": "1384045022210424882"
   },
   "1130057359390150676": {
     "AntiCheat": {
@@ -41,7 +41,8 @@
         "token_spam": true,
         "timebase_spam": true
       }
-    }
+    },
+    "staffRole": "1380114633087783002"
   },
   "1304404938138320926": {
     "AntiCheat": {

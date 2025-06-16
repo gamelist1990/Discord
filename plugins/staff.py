@@ -34,13 +34,17 @@ class StaffUtil:
             return []
         return [m for m in self.guild.members if role in m.roles and not m.bot]
 
-    async def send_staff_alert(self, message):
+    async def send_staff_alert(self, message, embed=None):
         from DataBase import get_guild_value
         alert_channel_id = get_guild_value(self.guild.id, "alertChannel")
         if alert_channel_id:
             channel = self.guild.get_channel(int(alert_channel_id))
-            if channel:
-                await channel.send(message)
+            # 通知チャンネルが存在し、かつコマンド実行チャンネルと異なる場合のみ送信
+            if channel and channel.id != self.ctx.channel.id:
+                if embed:
+                    await channel.send(content=message if message else None, embed=embed)
+                else:
+                    await channel.send(message)
 
     async def vote_action(self, ctx, target_member, action_name, reason, action_func, timeout_sec=300):
         """
@@ -184,7 +188,7 @@ class StaffUtil:
         embed.add_field(
             name="🛡️ 操作コマンド（スタッフのみ）",
             value="""```
-#staff timeout @ユーザー <秒数> - スタッフ以外のユーザーにタイムアウトを付与
+#staff timeout @ユーザー <秒数> [理由] - スタッフ以外のユーザーにタイムアウトを付与
 #staff kick @ユーザー <理由> - スタッフまたは管理者が実行可能。スタッフ投票で過半数賛成でユーザーをキック
 ```""",
             inline=False
@@ -268,31 +272,136 @@ class StaffUtil:
             await ctx.send(f"チャンネル {channel.mention} は既に存在します。")
 
     @staticmethod
-    async def handle_timeout_cmd(ctx, member: discord.Member, seconds: int):
+    def parse_timestr(timestr):
+        """
+        例: '10s', '5m', '2h', '1d' などを秒数に変換。数字のみならint変換。
+        """
+        import re
+        timestr = str(timestr).strip().lower()
+        pattern = r"^(\d+)([smhd]?)$"
+        match = re.match(pattern, timestr)
+        if not match:
+            raise ValueError("時間指定は 10s, 5m, 2h, 1d などで入力してください")
+        value, unit = match.groups()
+        value = int(value)
+        if unit == 's' or unit == '':
+            return value
+        elif unit == 'm':
+            return value * 60
+        elif unit == 'h':
+            return value * 3600
+        elif unit == 'd':
+            return value * 86400
+        else:
+            raise ValueError("不正な時間単位です")
+
+    @staticmethod
+    async def handle_timeout_cmd(ctx, member_or_id, seconds_str, *, reason=None):
         """
         スタッフ以外の指定ユーザーに指定秒数のタイムアウトを付与し、通知チャンネルが設定されていれば通知も送信。
-        使い方: #staff timeout @ユーザー <秒数>
+        使い方: #staff timeout @ユーザー <秒数> [理由]
+               #staff timeout ユーザーID <秒数> [理由]
+               #staff timeout @ユーザー 1h 荒らし行為のため
         """
         util = StaffUtil(ctx)
         role = util.get_staff_role()
         if not role:
             await ctx.send('スタッフロールが設定されていません。')
             return
+        # ユーザーID対応
+        member = member_or_id
+        try:
+            # 通常の数字IDの場合
+            if isinstance(member_or_id, str) and member_or_id.isdigit():
+                member = await ctx.guild.fetch_member(int(member_or_id))
+            # メンション形式 <@123456789> の場合
+            elif isinstance(member_or_id, str) and member_or_id.startswith('<@') and member_or_id.endswith('>'):
+                import re
+                # メンションからIDを抽出 (<@123456789> または <@!123456789>)
+                mention_match = re.match(r'<@!?(\d+)>', member_or_id)
+                if mention_match:
+                    user_id = int(mention_match.group(1))
+                    member = await ctx.guild.fetch_member(user_id)
+                    print(f"[DEBUG] メンションからIDを抽出: {member_or_id} → {user_id}")
+                else:
+                    await ctx.send(f'無効なメンション形式です: {member_or_id}')
+                    return
+        except discord.NotFound:
+            await ctx.send(f'ID: {member_or_id} のユーザーが見つかりません。')
+            return
+        except Exception as e:
+            await ctx.send(f'エラーが発生しました: {str(e)}')
+            return
+            
+        # メンバーオブジェクトかどうか確認
+        if not isinstance(member, discord.Member):
+            await ctx.send(f'無効なユーザーです。メンションまたはIDで指定してください。')
+            return
+            
         if role in member.roles:
             await ctx.send(f'{member.mention} はスタッフロールを持っているためタイムアウトできません。')
             return
         if member.bot:
             await ctx.send('Botにはタイムアウトできません。')
             return
-        import datetime
-        until = datetime.datetime.utcnow() + datetime.timedelta(seconds=seconds)
         try:
-            await member.edit(timed_out_until=until)
-            msg = f"{member.mention} に {seconds}秒のタイムアウトを付与しました。"
-            await ctx.send(msg)
-            await util.send_staff_alert(msg)
-        except Exception:
-            await ctx.send(f'{member.mention} へのタイムアウト付与に失敗しました。')
+            seconds = StaffUtil.parse_timestr(seconds_str)
+        except Exception as e:
+            await ctx.send(f'時間指定が不正です: {e}')
+            return
+        import datetime
+        until = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=seconds)
+        try:
+            # 理由がある場合はタイムアウト理由に設定
+            timeout_reason = f"スタッフによるタイムアウト: {reason}" if reason else "スタッフによるタイムアウト"
+            
+            # デバッグ出力
+            print(f"[DEBUG] タイムアウト実行: member={member.id}, seconds={seconds}, reason={reason}")
+            
+            try:
+                await member.edit(timed_out_until=until, reason=timeout_reason)
+            except discord.Forbidden:
+                await ctx.send(f"⚠️ 権限不足のためタイムアウトできませんでした。Botの権限を確認してください。")
+                return
+            except discord.HTTPException as http_e:
+                await ctx.send(f"⚠️ Discordサーバーエラー: {http_e}")
+                return
+            except Exception as other_e:
+                await ctx.send(f"⚠️ 予期せぬエラー: {other_e}")
+                return
+                
+            # Embedを使用した通知に変更
+            embed = discord.Embed(
+                title="タイムアウト通知",
+                description=f"{member.mention} に {seconds}秒のタイムアウトを付与しました。",
+                color=0xf1c40f  # 黄色
+            )
+            embed.set_author(name=f"{ctx.author.display_name}", icon_url=ctx.author.display_avatar.url)
+            embed.set_thumbnail(url=member.display_avatar.url)
+            embed.add_field(name="期間", value=f"{seconds}秒", inline=True)
+            embed.add_field(name="終了時刻", value=f"<t:{int(until.timestamp())}:F>", inline=True)
+            # 理由がある場合は表示
+            if reason:
+                embed.add_field(name="理由", value=reason, inline=False)
+            embed.timestamp = datetime.datetime.now()
+            
+            await ctx.send(embed=embed)
+            # 通知チャンネルにも同じEmbedを送信（コマンド実行チャンネルと異なる場合のみ）
+            await util.send_staff_alert(None, embed=embed)
+        except Exception as e:
+            error_message = f'{member.mention} へのタイムアウト付与に失敗しました。'
+            
+            # エラーの詳細を追加
+            if hasattr(member, 'guild_permissions') and member.guild_permissions.administrator:
+                error_message += "\n⚠️ 管理者権限を持つメンバーはタイムアウトできません。"
+            elif hasattr(ctx.guild, 'owner') and member.id == ctx.guild.owner.id:
+                error_message += "\n⚠️ サーバーオーナーはタイムアウトできません。"
+            elif hasattr(ctx.guild, 'me') and member.top_role >= ctx.guild.me.top_role:
+                error_message += "\n⚠️ Botより上位のロールを持つメンバーはタイムアウトできません。"
+            else:
+                error_message += f"\nエラー詳細: {str(e)}"
+                
+            await ctx.send(error_message)
 
     @staticmethod
     async def handle_kick_cmd(ctx, member, reason: str):
@@ -355,8 +464,13 @@ def setup(bot):
         await StaffUtil.handle_private_cmd(ctx)
 
     @staff.command(name='timeout')
-    async def timeout_cmd(ctx, member: discord.Member, seconds: int):
-        await StaffUtil.handle_timeout_cmd(ctx, member, seconds)
+    async def timeout_cmd(ctx, member_or_id, seconds_str, *, reason=None):
+        """
+        タイムアウトコマンド: @ユーザー または ユーザーID で指定可能。時間は 1s, 1m, 2h, 1d など対応
+        使い方: #staff timeout @ユーザー 1h [理由] または #staff timeout ユーザーID 30m [理由]
+        メンション例: #staff timeout <@123456789> 10m 迷惑行為
+        """
+        await StaffUtil.handle_timeout_cmd(ctx, member_or_id, seconds_str, reason=reason)
 
     @staff.command(name='kick')
     async def kick_cmd(ctx, member_or_id, *, reason: str):
