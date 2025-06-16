@@ -1,7 +1,7 @@
 from discord.ext import commands
 from plugins import register_command
 import discord
-
+from index import is_admin, load_config
 
 class StaffUtil:
     def __init__(self, ctx):
@@ -19,12 +19,12 @@ class StaffUtil:
         self._role = discord.utils.get(self.guild.roles, id=int(staff_role_id))
         return self._role
 
-    def is_admin_user(self):
-        from index import is_admin, load_config
+    async def is_admin_user(self):
+        from index import is_admin
         config = load_config()
         return is_admin(self.ctx.author.id, self.guild.id, config)
 
-    def is_staff(self):
+    async def is_staff(self):
         role = self.get_staff_role()
         return bool(role and role in self.ctx.author.roles)
 
@@ -110,30 +110,15 @@ class StaffUtil:
         import asyncio
         asyncio.create_task(timeout_task())
 
-def setup(bot):
-    @commands.group()
-    async def staff(ctx):
-        """
-        スタッフ関連のコマンドグループ。
-        サブコマンドが指定されていない場合は案内メッセージを表示。
-        スタッフ以外は利用不可。
-        """
-        util = StaffUtil(ctx)
-        if not util.is_staff() and not util.is_admin_user():
-            await ctx.send('このコマンドはスタッフ専用です。')
-            return
-        if ctx.invoked_subcommand is None:
-            await ctx.send('staff help などのサブコマンドを指定してください')
-
-    @staff.command(name='role')
-    async def role_cmd(ctx, role_id: int):
+    @staticmethod
+    async def handle_role_cmd(ctx, role_id: int):
         """
         指定ロールIDをスタッフロールとして設定します（管理者のみ）。
         使い方: #staff role <roleID>
         """
         util = StaffUtil(ctx)
         from DataBase import update_guild_data
-        if not util.is_admin_user():
+        if not (await util.is_admin_user()):
             await ctx.send('このコマンドは管理者専用です。')
             return
         role = discord.utils.get(ctx.guild.roles, id=role_id)
@@ -143,15 +128,15 @@ def setup(bot):
         update_guild_data(ctx.guild.id, "staffRole", str(role_id))
         await ctx.send(f'スタッフロールを {role.mention} に設定しました。')
 
-    @staff.command(name='alert')
-    async def alert_cmd(ctx, channel_id_or_none: str):
+    @staticmethod
+    async def handle_alert_cmd(ctx, channel_id_or_none: str):
         """
         スタッフ通知用チャンネルを設定/解除します（管理者専用）。
         使い方: #staff alert <チャンネルID|none>
         """
         util = StaffUtil(ctx)
         from DataBase import update_guild_data
-        if not util.is_admin_user():
+        if not (await util.is_admin_user()):
             await ctx.send('このコマンドは管理者専用です。')
             return
         if channel_id_or_none.lower() == 'none':
@@ -169,47 +154,93 @@ def setup(bot):
         except Exception:
             await ctx.send('チャンネルIDが不正です。')
 
-    @staff.command(name='help')
-    async def help_cmd(ctx):
+    @staticmethod
+    async def handle_help_cmd(ctx):
         """
         staffコマンドの使い方を表示します。
         使い方: #staff help
         """
-        help_text = (
-            "【#staff コマンド一覧】\n"
-            "#staff help - このヘルプを表示\n"
-            "#staff list - スタッフ一覧を表示\n"
-            "#staff role <roleID> - スタッフロールを設定（管理者のみ）\n"
-            "#staff alert <チャンネルID|none> - スタッフ通知チャンネルを設定/解除（管理者のみ）\n"
-            "#staff timeout @ユーザー <秒数> - スタッフ以外のユーザーにタイムアウトを付与\n"
+        embed = discord.Embed(
+            title="📋 スタッフコマンド一覧",
+            description="スタッフ管理用コマンドの使い方",
+            color=0x3498db  # 青色
         )
-        await ctx.send(help_text)
+        
+        # 一般コマンド
+        embed.add_field(
+            name="🔍 一般コマンド", 
+            value="```\n#staff help - このヘルプを表示\n#staff list - スタッフ一覧を表示\n```", 
+            inline=False
+        )
+        
+        # 管理コマンド
+        embed.add_field(
+            name="⚙️ 管理コマンド（管理者専用）", 
+            value="```\n#staff role <roleID> - スタッフロールを設定\n#staff alert <チャンネルID|none> - スタッフ通知チャンネルを設定/解除\n#staff private - スタッフ専用カテゴリとチャンネルを作成\n```", 
+            inline=False
+        )
+        
+        # 操作コマンド
+        embed.add_field(
+            name="🛡️ 操作コマンド（スタッフのみ）",
+            value="""```
+#staff timeout @ユーザー <秒数> - スタッフ以外のユーザーにタイムアウトを付与
+#staff kick @ユーザー <理由> - スタッフまたは管理者が実行可能。スタッフ投票で過半数賛成でユーザーをキック
+```""",
+            inline=False
+        )
+        
+        embed.set_footer(text="詳細は各コマンドのヘルプを参照してください。")
+        
+        await ctx.send(embed=embed)
 
-    @staff.command(name='list')
-    async def list_cmd(ctx):
+    @staticmethod
+    async def handle_list_cmd(ctx):
         """
         スタッフ一覧を表示します。
         使い方: #staff list
         """
         util = StaffUtil(ctx)
         role = util.get_staff_role()
+        
+        embed = discord.Embed(
+            title="👥 スタッフ一覧",
+            color=0x2ecc71  # 緑色
+        )
+        
         if not role:
-            await ctx.send('スタッフロールが設定されていません。')
+            if await util.is_admin_user():
+                embed.description = "現在スタッフはいません"
+                embed.set_footer(text="スタッフロールが設定されていません")
+                await ctx.send(embed=embed)
+                return
+            else:
+                await ctx.send('スタッフロールを持つメンバーはいません。')
+                return
+                
+        # メンションではなく名前で表示する
+        staff_members = [m for m in ctx.guild.members if role in m.roles and not m.bot]
+        if not staff_members:
+            embed.description = "現在スタッフはいません"
+            await ctx.send(embed=embed)
             return
-        members = [m.mention for m in ctx.guild.members if role in m.roles]
-        if not members:
-            await ctx.send('スタッフロールを持つメンバーはいません。')
-            return
-        await ctx.send('スタッフ一覧:\n' + '\n'.join(members))
+        
+        # スタッフ名を表示名でリスト化
+        staff_names = [f"• {m.display_name}" for m in staff_members]
+        
+        # リストを1つのフィールドに表示
+        embed.description = "\n".join(staff_names)
+        embed.set_footer(text=f"スタッフロール: {role.name} • 合計: {len(staff_members)}名")
+        await ctx.send(embed=embed)
 
-    @staff.command(name='private')
-    async def private_cmd(ctx):
+    @staticmethod
+    async def handle_private_cmd(ctx):
         """
         スタッフ専用のプライベートカテゴリとチャンネルを作成します（管理者のみ）。
         使い方: #staff private
         """
         util = StaffUtil(ctx)
-        if not util.is_admin_user():
+        if not (await util.is_admin_user()):
             await ctx.send('このコマンドは管理者専用です。')
             return
         guild = ctx.guild
@@ -236,8 +267,8 @@ def setup(bot):
         else:
             await ctx.send(f"チャンネル {channel.mention} は既に存在します。")
 
-    @staff.command(name='timeout')
-    async def timeout_cmd(ctx, member: discord.Member, seconds: int):
+    @staticmethod
+    async def handle_timeout_cmd(ctx, member: discord.Member, seconds: int):
         """
         スタッフ以外の指定ユーザーに指定秒数のタイムアウトを付与し、通知チャンネルが設定されていれば通知も送信。
         使い方: #staff timeout @ユーザー <秒数>
@@ -263,11 +294,12 @@ def setup(bot):
         except Exception:
             await ctx.send(f'{member.mention} へのタイムアウト付与に失敗しました。')
 
-    @staff.command(name='kick')
-    async def kick_cmd(ctx, member: discord.Member, *, reason: str):
+    @staticmethod
+    async def handle_kick_cmd(ctx, member, reason: str):
         """
         スタッフの過半数投票で指定ユーザーをキック。投票は5分間有効。
         使い方: #staff kick @ユーザー 理由
+               #staff kick ユーザーID 理由
         """
         util = StaffUtil(ctx)
         role = util.get_staff_role()
@@ -283,5 +315,68 @@ def setup(bot):
         async def do_kick(ctx, member, reason):
             await member.kick(reason=f"スタッフ投票により可決: {reason}")
         await util.vote_action(ctx, member, "キック", reason, do_kick, timeout_sec=300)
+
+def setup(bot):
+    @commands.group()
+    async def staff(ctx):
+        util = StaffUtil(ctx)
+        if ctx.invoked_subcommand is None:
+            await ctx.send('staff help などのサブコマンドを指定してください')
+            return
+        subcmd = ctx.invoked_subcommand.name if ctx.invoked_subcommand else None
+        admin_only = {'role', 'alert', 'private'}
+        # help以外、かつ管理者専用以外はスタッフまたは管理者のみ許可
+        if subcmd not in ('help', *admin_only) and not (await util.is_staff()) and not (await util.is_admin_user()):
+            await ctx.send('このコマンドはスタッフ専用です。')
+            return
+        # スタッフロール未設定時は一度だけ案内（help, admin専用コマンドは除外）
+        if subcmd not in ('help', *admin_only) and not util.get_staff_role():
+            await ctx.send('スタッフロールが設定されていません。')
+            return
+
+    @staff.command(name='role')
+    async def role_cmd(ctx, role_id: int):
+        await StaffUtil.handle_role_cmd(ctx, role_id)
+
+    @staff.command(name='alert')
+    async def alert_cmd(ctx, channel_id_or_none: str):
+        await StaffUtil.handle_alert_cmd(ctx, channel_id_or_none)
+
+    @staff.command(name='help')
+    async def help_cmd(ctx):
+        await StaffUtil.handle_help_cmd(ctx)
+
+    @staff.command(name='list')
+    async def list_cmd(ctx):
+        await StaffUtil.handle_list_cmd(ctx)
+
+    @staff.command(name='private')
+    async def private_cmd(ctx):
+        await StaffUtil.handle_private_cmd(ctx)
+
+    @staff.command(name='timeout')
+    async def timeout_cmd(ctx, member: discord.Member, seconds: int):
+        await StaffUtil.handle_timeout_cmd(ctx, member, seconds)
+
+    @staff.command(name='kick')
+    async def kick_cmd(ctx, member_or_id, *, reason: str):
+        """
+        スタッフ投票でユーザーをキック
+        使い方: #staff kick @ユーザー 理由
+               #staff kick ユーザーID 理由
+        """
+        # ユーザーIDが渡された場合は Member オブジェクトに変換
+        member = member_or_id
+        try:
+            if isinstance(member_or_id, str) and member_or_id.isdigit():
+                member = await ctx.guild.fetch_member(int(member_or_id))
+        except discord.NotFound:
+            await ctx.send(f'ID: {member_or_id} のユーザーが見つかりません。')
+            return
+        except Exception as e:
+            await ctx.send(f'エラーが発生しました: {str(e)}')
+            return
+        
+        await StaffUtil.handle_kick_cmd(ctx, member, reason)
 
     register_command(bot, staff)

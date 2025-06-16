@@ -186,15 +186,17 @@ def ensure_eula_agreed(config):
 
 # 管理者判定
 def is_global_admin(user_id, config):
-    return user_id in config.get("globalAdmins", [])
+    return str(user_id) in config.get("globalAdmins", [])
 
 
 def is_guild_admin(user_id, guild_id, config):
-    return user_id in config.get("guildAdmins", {}).get(str(guild_id), [])
+    return str(user_id) in config.get("guildAdmins", {}).get(str(guild_id), [])
 
 
-def is_admin(user_id, guild_id, config):
-    return is_global_admin(user_id, config) or is_guild_admin(user_id, guild_id, config)
+def is_admin(user_id, guild_id, config): 
+    result = is_global_admin(user_id, config) or is_guild_admin(user_id, guild_id, config)
+    print(f"[DEBUG] is_admin: user_id={user_id}, guild_id={guild_id}, result={result}")
+    return result
 
 
 # プラグイン/コマンドの動的ロード
