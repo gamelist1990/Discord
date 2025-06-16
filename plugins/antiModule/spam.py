@@ -42,6 +42,11 @@ TEXT_SPAM_CONFIG = {
     "burst_count_threshold": 4,
     "burst_window": 10,
     "burst_score": 0.5,
+    "repeat_phrase_min_length": 5,  # 繰り返しフレーズの最小長
+    "repeat_phrase_min_count": 3,  # 繰り返し回数
+    "repeat_phrase_score": 0.4,    # 繰り返しフレーズスコア
+    "kana_symbol_run_length": 10,  # ひらがな・カタカナ・記号連続の最小長
+    "kana_symbol_run_score": 0.3,  # そのスコア
 }
 user_recent_messages = {}
 user_blocked_until = {}
@@ -483,6 +488,7 @@ class Spam(BaseSpam):
         message: discord.Message, timeout_duration: int = DEFAULT_TIMEOUT_DURATION
     ):
         from .config import AntiCheatConfig
+        import re
 
         if not await AntiCheatConfig.is_enabled(message.guild):
             return False
@@ -555,6 +561,21 @@ class Spam(BaseSpam):
             score += TEXT_SPAM_CONFIG["very_short_score"]
         if re.search(r"[ぁ-んァ-ン一-龥]", content):
             score -= TEXT_SPAM_CONFIG["japanese_text_reduction"]
+
+        # 連続した同一フレーズの繰り返し検知
+        content = message.content
+        if content:
+            # フレーズ繰り返し検知
+            min_len = TEXT_SPAM_CONFIG.get("repeat_phrase_min_length", 5)
+            min_count = TEXT_SPAM_CONFIG.get("repeat_phrase_min_count", 3)
+            phrase_pattern = re.compile(rf"(.{{{min_len},}}?)(?:\\1){{{min_count - 1},}}", re.DOTALL)
+            if phrase_pattern.search(content):
+                score += TEXT_SPAM_CONFIG.get("repeat_phrase_score", 0.4)
+            # ひらがな・カタカナ・記号の連続検知
+            kana_symbol_run = re.compile(r"[ぁ-んァ-ン゛゜ー\s\W]{%d,}" % TEXT_SPAM_CONFIG.get("kana_symbol_run_length", 10))
+            if kana_symbol_run.search(content):
+                score += TEXT_SPAM_CONFIG.get("kana_symbol_run_score", 0.3)
+
         if score >= TEXT_SPAM_CONFIG["base_threshold"]:
             # mass spam ログ追加・判定
             guild_id = message.guild.id if message.guild else None
@@ -871,158 +892,93 @@ class SpamLogAggregator:
 
     def __init__(self):
         self.log_buffer = deque(maxlen=MASS_SPAM_LOG_BUFFER_SIZE)
-        self.guild_spam_counts = (
-            {}
-        )  # {guild_id: [(timestamp, user_id, alert_type), ...]}
+        self.guild_spam_counts = {}  # {guild_id: [(timestamp, user_id, alert_type), ...]}
         self.mass_spam_active = {}  # {guild_id: timestamp}
         self.processed_logs = set()  # 処理済みログのハッシュ
 
-    def add_spam_log(self, guild_id, user_id, alert_type, timestamp=None):
-        """スパム検知ログを追加"""
-        if timestamp is None:
-            timestamp = int(datetime.now(timezone.utc).timestamp())
+    def add_spam_log(self, guild_id, user_id, alert_type, timestamp):
+        # ギルドIDが無効な場合は無視
+        if guild_id is None:
+            return
 
-        log_entry = {
-            "guild_id": guild_id,
-            "user_id": user_id,
-            "alert_type": alert_type,
-            "timestamp": timestamp,
-        }
+        # ログエントリの作成
+        log_entry = (timestamp, user_id, alert_type)
 
-        # 重複チェック
-        log_hash = f"{guild_id}_{user_id}_{alert_type}_{timestamp}"
-        if log_hash in self.processed_logs:
-            return False
-
+        # バッファに追加
         self.log_buffer.append(log_entry)
-        self.processed_logs.add(log_hash)
 
-        # ギルド別のカウント更新
+        # ギルドごとのスパムログに追加
         if guild_id not in self.guild_spam_counts:
-            self.guild_spam_counts[guild_id] = deque()
+            self.guild_spam_counts[guild_id] = []
+        self.guild_spam_counts[guild_id].append(log_entry)
 
-        self.guild_spam_counts[guild_id].append((timestamp, user_id, alert_type))
+        # 大人数スパム判定のための処理
+        self.process_mass_spam(guild_id, log_entry)
 
-        # 古いエントリを削除
-        cutoff = timestamp - MASS_SPAM_DETECTION_WINDOW
-        while (
-            self.guild_spam_counts[guild_id]
-            and self.guild_spam_counts[guild_id][0][0] < cutoff
-        ):
-            self.guild_spam_counts[guild_id].popleft()
+    def process_mass_spam(self, guild_id, log_entry):
+        # 現在のギルドのスパムログを取得
+        guild_logs = self.guild_spam_counts.get(guild_id, [])
 
-        return True
+        # 一定数以上のスパムログがある場合に判定
+        if len(guild_logs) >= MASS_SPAM_USER_THRESHOLD:
+            # タイムスタンプでソート
+            sorted_logs = sorted(guild_logs, key=lambda x: x[0])
 
-    def check_mass_spam(self, guild_id):
-        """大人数スパムかどうかチェック"""
-        if guild_id not in self.guild_spam_counts:
-            return False
+            # 最初のログと最後のログの時間差を計算
+            time_diff = sorted_logs[-1][0] - sorted_logs[0][0]
 
-        recent_logs = self.guild_spam_counts[guild_id]
-        if len(recent_logs) < MASS_SPAM_USER_THRESHOLD:
-            return False
-
-        # 異なるユーザー数をカウント
-        unique_users = set(user_id for _, user_id, _ in recent_logs)
-
-        return len(unique_users) >= MASS_SPAM_USER_THRESHOLD
-
-    def get_recent_spam_summary(self, guild_id, window_seconds=60):
-        """最近のスパム検知サマリーを取得"""
-        if guild_id not in self.guild_spam_counts:
-            return {}
-
-        now = int(datetime.now(timezone.utc).timestamp())
-        cutoff = now - window_seconds
-
-        recent_logs = [
-            log for log in self.guild_spam_counts[guild_id] if log[0] >= cutoff
-        ]
-
-        summary = {
-            "total_detections": len(recent_logs),
-            "unique_users": len(set(user_id for _, user_id, _ in recent_logs)),
-            "alert_types": {},
-            "user_counts": {},
-        }
-
-        for _, user_id, alert_type in recent_logs:
-            summary["alert_types"][alert_type] = (
-                summary["alert_types"].get(alert_type, 0) + 1
-            )
-            summary["user_counts"][user_id] = summary["user_counts"].get(user_id, 0) + 1
-
-        return summary
-
-    def is_mass_spam_active(self, guild_id):
-        """大人数スパムが進行中かチェック"""
-        if guild_id not in self.mass_spam_active:
-            return False
-
-        # 10分間は大人数スパム状態を維持
-        cutoff = int(datetime.now(timezone.utc).timestamp()) - 600
-        return self.mass_spam_active[guild_id] > cutoff
+            # 時間差が閾値以下であれば大人数スパムとみなす
+            if time_diff <= MASS_SPAM_DETECTION_WINDOW:
+                self.activate_mass_spam_mode(guild_id)
 
     def activate_mass_spam_mode(self, guild_id):
-        """大人数スパムモードを有効化"""
-        self.mass_spam_active[guild_id] = int(datetime.now(timezone.utc).timestamp())
-        print(f"[MASS SPAM] Mass spam mode activated for guild {guild_id}")
+        # 既にアクティブな場合は何もしない
+        if guild_id in self.mass_spam_active:
+            return
 
+        # アクティブにする
+        self.mass_spam_active[guild_id] = True
 
-class SpamStatistics:
-    """スパム統計とレポート機能"""
+        # 一定時間後に自動で非アクティブにする
+        asyncio.create_task(self.deactivate_mass_spam_mode(guild_id))
 
-    @staticmethod
-    def get_spam_statistics(guild_id, time_range_minutes=60):
-        """指定された時間範囲のスパム統計を取得"""
-        summary = spam_log_aggregator.get_recent_spam_summary(
-            guild_id, time_range_minutes * 60
-        )
+    async def deactivate_mass_spam_mode(self, guild_id):
+        await asyncio.sleep(MASS_SPAM_ENHANCED_SLOWMODE)
+        if guild_id in self.mass_spam_active:
+            del self.mass_spam_active[guild_id]
 
-        # より詳細な統計情報を追加
-        statistics = {
-            "period_minutes": time_range_minutes,
-            "total_detections": summary["total_detections"],
-            "unique_users": summary["unique_users"],
-            "detection_rate": (
-                summary["total_detections"] / time_range_minutes
-                if time_range_minutes > 0
-                else 0
-            ),
-            "alert_breakdown": summary["alert_types"],
-            "top_spammers": sorted(
-                summary["user_counts"].items(), key=lambda x: x[1], reverse=True
-            )[:10],
-            "is_mass_spam_active": spam_log_aggregator.is_mass_spam_active(guild_id),
-            "timestamp": int(datetime.now(timezone.utc).timestamp()),
+    def is_mass_spam_active(self, guild_id):
+        return guild_id in self.mass_spam_active
+
+    def check_mass_spam(self, guild_id):
+        # ギルドに関連するスパムログを取得
+        guild_logs = self.guild_spam_counts.get(guild_id, [])
+
+        # 一定数以上のスパムログがあり、かつ最初のログからの時間差が閾値以下であればスパムとみなす
+        if len(guild_logs) >= MASS_SPAM_USER_THRESHOLD:
+            sorted_logs = sorted(guild_logs, key=lambda x: x[0])
+            time_diff = sorted_logs[-1][0] - sorted_logs[0][0]
+            if time_diff <= MASS_SPAM_DETECTION_WINDOW:
+                return True
+        return False
+
+    def get_recent_spam_summary(self, guild_id):
+        # ギルドに関連するスパムログを取得
+        guild_logs = self.guild_spam_counts.get(guild_id, [])
+
+        # ユーザーごとのスパム回数をカウント
+        user_counts = {}
+        for _, user_id, _ in guild_logs:
+            if user_id not in user_counts:
+                user_counts[user_id] = 0
+            user_counts[user_id] += 1
+
+        # 結果を返す
+        return {
+            "total_logs": len(guild_logs),
+            "unique_users": len(user_counts),
+            "user_counts": user_counts,
         }
-
-        return statistics
-
-    @staticmethod
-    def format_spam_report(guild_id, time_range_minutes=60):
-        """スパムレポートを文字列として整形"""
-        stats = SpamStatistics.get_spam_statistics(guild_id, time_range_minutes)
-
-        report = f"📊 **スパム検知レポート** (過去{time_range_minutes}分)\n"
-        report += f"• 検知総数: {stats['total_detections']}件\n"
-        report += f"• 関与ユーザー数: {stats['unique_users']}人\n"
-        report += f"• 検知レート: {stats['detection_rate']:.2f}件/分\n"
-
-        if stats["is_mass_spam_active"]:
-            report += f"🚨 **大人数スパム警報発令中**\n"
-
-        if stats["alert_breakdown"]:
-            report += f"\n**検知タイプ別:**\n"
-            for alert_type, count in stats["alert_breakdown"].items():
-                report += f"• {alert_type}: {count}件\n"
-
-        if stats["top_spammers"]:
-            report += f"\n**上位スパマー:**\n"
-            for i, (user_id, count) in enumerate(stats["top_spammers"][:5]):
-                report += f"{i+1}. <@{user_id}>: {count}件\n"
-
-        return report
 
 
 # グローバルなログ集約インスタンス
