@@ -275,6 +275,7 @@ def main():
     intents.members = True
     intents.guilds = True
     intents.voice_states = True
+    intents.presences = True
     bot = commands.Bot(command_prefix=PREFIX, intents=intents, help_command=None)
     bot_instance = bot    
     
