@@ -28,17 +28,14 @@ def setup(bot):
         if not guild:
             await ctx.send('このコマンドはサーバー内でのみ使用できます')
             return
-        # 管理者ロールを持つユーザーを抽出（botは除外）
         admin_ids = [str(m.id) for m in guild.members if any(r.permissions.administrator for r in m.roles) and not m.bot]
         if not admin_ids:
             await ctx.send('管理者権限を持つユーザーが見つかりませんでした')
             return
-        # guildAdminsに登録
         if 'guildAdmins' not in config:
             config['guildAdmins'] = {}
         config['guildAdmins'][str(guild.id)] = admin_ids
         save_config(config)
-        # Embedで見やすく表示
         from discord import Embed
         lines = []
         for m in guild.members:
@@ -49,5 +46,4 @@ def setup(bot):
         embed.set_footer(text=f"合計: {len(admin_ids)}名")
         await ctx.send(embed=embed)
 
-    # コマンドをBotに登録
     register_command(bot, admin, aliases=None, admin=True)

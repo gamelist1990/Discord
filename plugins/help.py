@@ -99,7 +99,6 @@ def setup(bot):
             else:
                 await ctx.send(f"❌ コマンド `{cmd_name}` は見つかりませんでした。", delete_after=10)
             return
-        # 一覧表示時は説明を省略
         cmds = []
         max_desc_len = 20
         for c in ctx.bot.commands:

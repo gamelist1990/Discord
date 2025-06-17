@@ -12,7 +12,7 @@ class AnonChatModal(discord.ui.Modal):
         self.message_input = discord.ui.TextInput(
             label="送信する内容",
             placeholder="ここに匿名で送りたい内容を入力...",
-            style=discord.TextStyle.short,  # 一言コメント用
+            style=discord.TextStyle.short, 
             required=True,
             max_length=100
         )
@@ -20,7 +20,6 @@ class AnonChatModal(discord.ui.Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        # 入力値の整形：改行除去・連続空白を1つに
         text = self.message_input.value.replace('\n', ' ')
         import re
         text = re.sub(r'\s{2,}', ' ', text).strip()
@@ -50,9 +49,7 @@ def setup(bot):
             description="下のボタンから匿名メッセージを送信できます。",
             color=0x60a5fa
         )
-        # ModalInputViewは1回だけ生成し、ctx.sendも1回だけ呼ぶ
         async def on_anon_button(interaction, view):
-            # 既にモーダルが開いている場合は何もしない
             if interaction.response.is_done():
                 return
             await interaction.response.send_modal(AnonChatModal(ctx))

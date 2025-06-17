@@ -11,6 +11,11 @@ from datetime import datetime, timedelta
 DM_CATEGORY_NAME = "📥｜ DM"
 
 
+## コードの最適化及び処理の軽量化はGemini君dayo
+
+
+
+
 # ユーザー検索用関数
 async def search_members(ctx, query):
     query = query.strip().lower()

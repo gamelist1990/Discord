@@ -7,7 +7,6 @@ from plugins import register_command
 from index import load_config, is_admin
 from datetime import datetime
 
-# 管理者専用: サーバー設定編集コマンド
 
 def setup(bot):
     class MainEditView(View):
