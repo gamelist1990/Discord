@@ -358,7 +358,7 @@ class BaseSpam:
                     task.cancel()
 
                 # 大人数スパム時は長めの解除時間を設定
-                reset_delay = 60  # 常に60秒で解除判定
+                reset_delay = 10  # 
 
                 # --- slowmode解除時に元の値へ戻す ---
                 task = asyncio.create_task(
