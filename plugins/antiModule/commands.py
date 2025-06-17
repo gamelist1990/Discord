@@ -1,9 +1,8 @@
 from discord.ext import commands
 import discord
-from . import Spam, MediaSpam, MentionSpam, TokenSpam, TimebaseSpam, Block, Griefing, GuildConfig, MiniAntiBypass, AntiCheatConfig
-from .utils import parse_duration, mention_to_id
-import sys
-sys.path.append("../..")
+from plugins.antiModule import Spam, MediaSpam, MentionSpam, TokenSpam, TimebaseSpam, Block, Griefing, GuildConfig, MiniAntiBypass, AntiCheatConfig
+from plugins.antiModule.utils import parse_duration, mention_to_id
+
 from index import is_admin as isAdmin, load_config
 
 # antiコマンドの実装
@@ -103,7 +102,7 @@ def setup_anti_commands(bot):
         if not seconds:
             await ctx.send("期間指定が不正です。例: 1m, 2h, 3d, 10s")
             return
-        from .spam import user_blocked_until, Block
+        from plugins.antiModule.spam import user_blocked_until, Block
         from datetime import timedelta
         user_blocked_until[user_id] = int(discord.utils.utcnow().timestamp()) + seconds
         # タイムアウトも適用
@@ -118,7 +117,7 @@ def setup_anti_commands(bot):
         await ctx.send(f"ユーザー <@{user_id}> を {duration} ブロックしました。\n直近1時間以内のメッセージを安全に削除します…")
         # 直近1時間以内のメッセージ削除（ratelimit安全設計）
         try:
-            from .notifier import Notifier
+            from plugins.antiModule.notifier import Notifier
             dummy_msg = ctx.message
             if member is not None:
                 dummy_msg.author = member
@@ -133,7 +132,7 @@ def setup_anti_commands(bot):
     @anti.command()
     async def list(ctx):
         """現在ブロック中のユーザー一覧を表示"""
-        from .spam import user_blocked_until
+        from plugins.antiModule.spam import user_blocked_until
         now = int(discord.utils.utcnow().timestamp())
         blocks = [(uid, until) for uid, until in user_blocked_until.items() if until > now]
         if not blocks:

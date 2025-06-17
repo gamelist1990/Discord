@@ -17,6 +17,7 @@ from collections import defaultdict, deque
 from dotenv import load_dotenv
 from flask import Flask, render_template, jsonify, request
 from functools import wraps
+from discord import app_commands
 
 from DataBase import start_api_key_cleanup_loop
 
@@ -205,7 +206,8 @@ async def load_plugins(bot):
         os.makedirs(PLUGINS_DIR)
         print(f"⚠️ プラグインディレクトリ {PLUGINS_DIR} を作成しました。")
         return
-    plugin_files = glob.glob(os.path.join(PLUGINS_DIR, "*.py"))
+    # サブディレクトリも含めて全ての.pyをロード
+    plugin_files = glob.glob(os.path.join(PLUGINS_DIR, "**", "*.py"), recursive=True)
     if not plugin_files:
         print(f"ℹ️ 利用可能なプラグインが見つかりませんでした。")
         return
@@ -228,6 +230,29 @@ async def load_plugins(bot):
                 print(f"✔ プラグイン {file} をロードしました。")
         except Exception as e:
             print(f"❌ プラグイン {file} のロードエラー: {e}")
+
+
+def registerSlashCommand(bot, name, description, callback):
+    """
+    スラッシュコマンドを動的に登録する関数（使う側でasyncioやawait不要）。
+    name: コマンド名
+    description: コマンド説明
+    callback: コマンド実行時のコールバック関数 (async def func(interaction))
+    """
+    async def _register():
+        tree = bot.tree if hasattr(bot, 'tree') else None
+        if not tree:
+            print("❌ スラッシュコマンドツリーが見つかりません")
+            return
+        @app_commands.command(name=name, description=description)
+        async def dynamic_command(interaction: discord.Interaction):
+            await callback(interaction)
+        try:
+            tree.add_command(dynamic_command)
+            print(f"✔ スラッシュコマンド /{name} を登録しました。")
+        except Exception as e:
+            print(f"❌ スラッシュコマンド登録エラー: {e}")
+    asyncio.create_task(_register())
 
 
 # Bot起動
@@ -278,9 +303,36 @@ def main():
                 f"✔ Botオーナー {app_info.owner} ({owner_id}) をグローバル管理者に自動登録しました。"
             )
         
+        # --- ここから最適化: 不要なコマンドがある場合のみ一括削除・同期 ---
+        try:
+            for guild in bot.guilds:
+                # Discord上に登録されているコマンド一覧
+                remote_cmds = await bot.tree.fetch_commands(guild=guild)
+                remote_names = {cmd.name for cmd in remote_cmds}
+                # Botが管理しているコマンド一覧
+                local_cmds = bot.tree.get_commands(guild=guild)
+                local_names = {cmd.name for cmd in local_cmds}
+                # 不要なコマンドが存在する場合のみ削除・同期
+                if not remote_names.issubset(local_names):
+                    bot.tree.clear_commands(guild=guild)
+                    await bot.tree.sync(guild=guild)
+                    print(f"✔ ギルド {guild.name}({guild.id}) の不要なスラッシュコマンドを一括削除・再同期しました。")
+        except Exception as e:
+            print(f"❌ ギルドコマンド一括削除・同期エラー: {e}")
+        # --- ここまで最適化 ---
+        
         # プラグインのロード
         await load_plugins(bot)
-        
+
+        # --- ここで一括同期 ---
+        try:
+            for guild in bot.guilds:
+                await bot.tree.sync(guild=guild)
+            print("✔ 全ギルドのスラッシュコマンドを一括同期しました。")
+        except Exception as e:
+            print(f"❌ スラッシュコマンド一括同期エラー: {e}")
+        # --- ここまで ---
+
         # Botステータス
         await bot.change_presence(
             activity=discord.Activity(
@@ -391,6 +443,10 @@ def main():
     @bot.event
     async def on_command_error(ctx, error):
         print(f"❌ コマンドエラー: {error}")
+
+    @bot.event
+    async def on_application_command_error(interaction, error):
+        print(f"❌ スラッシュコマンドエラー: {error}")
 
     # Flask アプリケーションを別スレッドで起動
     flask_thread = threading.Thread(target=run_flask, daemon=True)

@@ -276,7 +276,6 @@ def setup(bot):
         
         await slowmode_plugin.handle_slowmode_command(ctx.message)
     
-    print("[PLUGIN] Slowmode plugin loaded successfully")
 
 # 互換性のため
 slowmode_plugin_instance = None

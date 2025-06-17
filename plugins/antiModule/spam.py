@@ -5,8 +5,8 @@ import asyncio
 from datetime import datetime, timezone, timedelta
 
 import discord
-from .notifier import Notifier
-from .bypass import MiniAntiBypass
+from plugins.antiModule.notifier import Notifier
+from plugins.antiModule.bypass import MiniAntiBypass
 
 # スパム検知用定数・グローバル変数
 SIMILARITY_THRESHOLD = 0.85
@@ -492,7 +492,7 @@ class Spam(BaseSpam):
     async def check_and_block_spam(
         message: discord.Message, timeout_duration: int = DEFAULT_TIMEOUT_DURATION
     ):
-        from .config import AntiCheatConfig
+        from plugins.antiModule.config import AntiCheatConfig
         import re
 
         if not await AntiCheatConfig.is_enabled(message.guild):

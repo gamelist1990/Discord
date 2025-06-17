@@ -1,5 +1,7 @@
-from typing import Optional
+from typing import Optional, Callable, Awaitable
 from discord.ext.commands import Bot, Command
+import discord
+from index import registerSlashCommand as _registerSlashCommand
 
 def register_command(
     bot: Bot,
@@ -16,3 +18,6 @@ def register_command(
     bot.add_command(command)
     # alias機能は廃止（何もしない）
     setattr(command, "admin", admin)
+
+# registerSlashCommandをグローバル公開
+registerSlashCommand = _registerSlashCommand
