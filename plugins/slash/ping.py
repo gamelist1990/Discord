@@ -11,7 +11,7 @@ def setup(bot):
             color=0x2ecc71
         )
         embed.set_footer(text=f"サーバー: {interaction.guild.name if interaction.guild else 'DM'} | 実行者: {interaction.user.display_name}")
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
         
     registerSlashCommand(bot, "ping", "Botの応答速度を表示します。", ping_callback)
 
