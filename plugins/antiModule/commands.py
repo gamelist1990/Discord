@@ -48,6 +48,7 @@ def setup_anti_commands(bot):
         detection_status.append(f"🚨 Tokenスパム: {'✅ 有効' if detection['token_spam'] else '❌ 無効'}")
         detection_status.append(f"⏰ タイムベーススパム: {'✅ 有効' if detection['timebase_spam'] else '❌ 無効'}")
         detection_status.append(f"⌨️ Typing Bypass: {'✅ 有効' if detection.get('typing_bypass', False) else '❌ 無効'}")
+        detection_status.append(f"🔁 転送スパム: {'✅ 有効' if detection.get('forward_spam', False) else '❌ 無効'}")
         
         embed.add_field(
             name="🔍 検知機能",
@@ -203,7 +204,8 @@ def setup_anti_commands(bot):
             "mention_spam": "メンションスパム検知",
             "token_spam": "トークンスパム検知",
             "timebase_spam": "タイムベーススパム検知",
-            "typing_bypass": "Typing Bypass検知"
+            "typing_bypass": "Typing Bypass検知",
+            "forward_spam": "転送スパム検知"
         }
         
         if feature is None:

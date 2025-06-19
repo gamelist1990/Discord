@@ -38,7 +38,10 @@ class Notifier:
                 "mass_mention": {"color": 0xDC143C, "icon": "🚨📢", "title": "大人数メンションスパム検知"},
                 "mass_token": {"color": 0x800000, "icon": "🚨⚠️", "title": "大人数トークンスパム検知"},
                 "mass_timebase": {"color": 0x8B4513, "icon": "🚨⏰", "title": "大人数タイムベーススパム検知"},
-                "mass_spam": {"color": 0x000000, "icon": "🚨🔥", "title": "緊急：大人数スパム攻撃検知"}            }
+                "mass_spam": {"color": 0x000000, "icon": "🚨🔥", "title": "緊急：大人数スパム攻撃検知"},
+                "forward": {"color": 0x4B0082, "icon": "🔁", "title": "転送スパム検知"},
+                "mass_forward": {"color": 0x800080, "icon": "🚨🔁", "title": "大人数転送スパム検知"},
+            }
             
             config = alert_config.get(alert_type, alert_config["text"])
             

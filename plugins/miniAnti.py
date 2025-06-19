@@ -6,6 +6,7 @@ from plugins.antiModule.SpamList.MentionSpam import MentionSpam
 from plugins.antiModule.SpamList.TokenSpam import TokenSpam
 from plugins.antiModule.SpamList.TimebaseSpam import TimebaseSpam
 from plugins.antiModule.SpamList.TypingBypass import TypingBypass
+from plugins.antiModule.SpamList.ForwardSpam import ForwardSpam
 from discord.ext.commands import Bot
 from discord import Message
 
@@ -52,19 +53,10 @@ def setup(bot: Bot):
             except:
                 pass
             return
-        # タイムベース検知を追加
+        # タイムベース検知
         timebase_blocked = await TimebaseSpam.check_and_block_timebase_spam(message)
         if timebase_blocked:
             await Griefing.handle_griefing(message, alert_type="timebase")
-            try:
-                await message.delete()
-            except:
-                pass
-            return
-        # テキストスパム判定（類似性）
-        blocked = await TextSpam.check_and_block_spam(message)
-        if blocked:
-            await Griefing.handle_griefing(message, alert_type="text")
             try:
                 await message.delete()
             except:
@@ -74,6 +66,24 @@ def setup(bot: Bot):
         typing_bypass_blocked = await TypingBypass.check_and_block_typing_bypass(message)
         if typing_bypass_blocked:
             await Griefing.handle_griefing(message, alert_type="typing_bypass")
+            try:
+                await message.delete()
+            except:
+                pass
+            return
+        # 転送スパム判定
+        forward_blocked = await ForwardSpam.check_and_block_forward_spam(message)
+        if forward_blocked:
+            await Griefing.handle_griefing(message, alert_type="forward")
+            try:
+                await message.delete()
+            except:
+                pass
+            return
+        # テキストスパム判定
+        blocked = await TextSpam.check_and_block_spam(message)
+        if blocked:
+            await Griefing.handle_griefing(message, alert_type="text")
             try:
                 await message.delete()
             except:

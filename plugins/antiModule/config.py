@@ -17,7 +17,8 @@ class AntiCheatConfig:
             "mention_spam": True,
             "token_spam": True,
             "timebase_spam": True,
-            "typing_bypass": True
+            "typing_bypass": True,
+            "forward_spam": True,  # 転送スパム検知を追加
         }
     }
     
