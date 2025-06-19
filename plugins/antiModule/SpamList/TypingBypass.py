@@ -35,7 +35,7 @@ class TypingBypass:
         current_time = time.time()
         content = getattr(message, 'content', '')
         # 10文字以下のメッセージは許可
-        if len(content) <= 10:
+        if len(content) <= 20:
             return False
         if user_id not in TypingBypass.typing_timestamps:
             try:
