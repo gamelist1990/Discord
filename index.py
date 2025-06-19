@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 from flask import Flask, render_template, jsonify, request
 from functools import wraps
 from discord import app_commands
+from typing import Any, Callable
 
 from DataBase import start_api_key_cleanup_loop
 
@@ -255,9 +256,44 @@ def registerSlashCommand(bot, name, description, callback):
     asyncio.create_task(_register())
 
 
+# --- Botイベントハンドラ管理 ---
+_event_handlers = {}
+
+def registerBotEvent(bot, event_name: str, handler):
+    if bot is None:
+        print(f"[registerBotEvent] bot is None, cannot register {event_name}")
+        return
+    if event_name not in _event_handlers:
+        _event_handlers[event_name] = {}
+    # 多重登録防止: 既に同じhandlerがあればスキップ
+    if handler in _event_handlers[event_name].values():
+        return
+    handler_id = id(handler)
+    _event_handlers[event_name][handler_id] = handler
+    # プロキシを再生成
+    async def _event_proxy(*args, **kwargs):
+        for h in list(_event_handlers[event_name].values()):
+            await h(*args, **kwargs)
+    setattr(bot, event_name, _event_proxy)
+
+def unregisterBotEvent(bot, event_name: str, handler):
+    if bot is None:
+        print(f"[unregisterBotEvent] bot is None, cannot unregister {event_name}")
+        return
+    if event_name in _event_handlers:
+        handler_id = id(handler)
+        if handler_id in _event_handlers[event_name]:
+            del _event_handlers[event_name][handler_id]
+    # プロキシを再生成
+    async def _event_proxy(*args, **kwargs):
+        for h in list(_event_handlers[event_name].values()):
+            await h(*args, **kwargs)
+    setattr(bot, event_name, _event_proxy)
+
+
 # Bot起動
 def main():
-    global bot_instance, bot_start_time, server_count, bot_status
+    global bot_instance, bot_start_time, server_count, bot_status, system
 
     load_dotenv()
     config = load_config()
@@ -276,9 +312,10 @@ def main():
     intents.guilds = True
     intents.voice_states = True
     intents.presences = True
-    bot = commands.Bot(command_prefix=PREFIX, intents=intents, help_command=None)
-    bot_instance = bot    
-    
+    intents.typing = True
+    bot: commands.Bot = commands.Bot(command_prefix=PREFIX, intents=intents, help_command=None)
+    bot_instance = bot
+
     async def start_periodic_tasks():
         await asyncio.sleep(5)  # Bot起動直後の安定化待ち
         asyncio.create_task(update_isBot_periodically())
@@ -474,6 +511,8 @@ def isCommand(cmd_name):
     if bot_instance and hasattr(bot_instance, 'commands'):
         return any(c.name == cmd_name for c in bot_instance.commands)
     return False
+
+
 
 
 if __name__ == "__main__":

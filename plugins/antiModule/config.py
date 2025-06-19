@@ -16,7 +16,8 @@ class AntiCheatConfig:
             "image_spam": True,
             "mention_spam": True,
             "token_spam": True,
-            "timebase_spam": True
+            "timebase_spam": True,
+            "typing_bypass": True
         }
     }
     

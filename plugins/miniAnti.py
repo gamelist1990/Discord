@@ -1,10 +1,17 @@
 from plugins.antiModule.commands import setup_anti_commands
-from plugins.antiModule.spam import *
+from plugins.antiModule.spam import Block, Griefing
+from plugins.antiModule.SpamList.TextSpam import TextSpam
+from plugins.antiModule.SpamList.MediaSpam import MediaSpam
+from plugins.antiModule.SpamList.MentionSpam import MentionSpam
+from plugins.antiModule.SpamList.TokenSpam import TokenSpam
+from plugins.antiModule.SpamList.TimebaseSpam import TimebaseSpam
+from plugins.antiModule.SpamList.TypingBypass import TypingBypass
 from discord.ext.commands import Bot
 from discord import Message
 
 
 def setup(bot: Bot):
+    TypingBypass.set_bot(bot)
     @bot.listen("on_message")
     async def miniAnti_on_message(message: Message):
         if message.author.bot or not message.guild:
@@ -55,7 +62,7 @@ def setup(bot: Bot):
                 pass
             return
         # テキストスパム判定（類似性）
-        blocked = await Spam.check_and_block_spam(message)
+        blocked = await TextSpam.check_and_block_spam(message)
         if blocked:
             await Griefing.handle_griefing(message, alert_type="text")
             try:
@@ -63,4 +70,14 @@ def setup(bot: Bot):
             except:
                 pass
             return
+        # Typing Bypass 検知
+        typing_bypass_blocked = await TypingBypass.check_and_block_typing_bypass(message)
+        if typing_bypass_blocked:
+            await Griefing.handle_griefing(message, alert_type="typing_bypass")
+            try:
+                await message.delete()
+            except:
+                pass
+            return
+
     setup_anti_commands(bot)

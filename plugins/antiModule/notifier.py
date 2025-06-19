@@ -32,6 +32,7 @@ class Notifier:
                 "mention": {"color": 0xFF69B4, "icon": "📢", "title": "メンションスパム検知"},
                 "token": {"color": 0xFF0000, "icon": "🚨", "title": "トークン/Webhookスパム検知"},
                 "timebase": {"color": 0xFFA500, "icon": "⏰", "title": "タイムベーススパム検知"},
+                "typing_bypass": {"color": 0x00BFFF, "icon": "⌨️", "title": "Typing Bypass検知"},
                 "mass_text": {"color": 0x8B0000, "icon": "🚨📝", "title": "大人数テキストスパム検知"},
                 "mass_image": {"color": 0xFF4500, "icon": "🚨🖼️", "title": "大人数画像スパム検知"},
                 "mass_mention": {"color": 0xDC143C, "icon": "🚨📢", "title": "大人数メンションスパム検知"},

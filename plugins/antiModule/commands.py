@@ -1,7 +1,8 @@
 from discord.ext import commands
 import discord
-from plugins.antiModule import Spam, MediaSpam, MentionSpam, TokenSpam, TimebaseSpam, Block, Griefing, GuildConfig, MiniAntiBypass, AntiCheatConfig
-from plugins.antiModule.utils import parse_duration, mention_to_id
+from plugins.antiModule.spam import Block
+from plugins.antiModule.config import AntiCheatConfig
+from plugins.antiModule.utils import parse_duration
 
 from index import is_admin as isAdmin, load_config
 
@@ -44,8 +45,9 @@ def setup_anti_commands(bot):
         detection_status.append(f"📝 テキストスパム: {'✅ 有効' if detection['text_spam'] else '❌ 無効'}")
         detection_status.append(f"🖼️ 画像スパム: {'✅ 有効' if detection['image_spam'] else '❌ 無効'}")
         detection_status.append(f"📢 メンションスパム: {'✅ 有効' if detection['mention_spam'] else '❌ 無効'}")
-        detection_status.append(f"🚨 cl/Webhookスパム: {'✅ 有効' if detection['token_spam'] else '❌ 無効'}")
+        detection_status.append(f"🚨 Tokenスパム: {'✅ 有効' if detection['token_spam'] else '❌ 無効'}")
         detection_status.append(f"⏰ タイムベーススパム: {'✅ 有効' if detection['timebase_spam'] else '❌ 無効'}")
+        detection_status.append(f"⌨️ Typing Bypass: {'✅ 有効' if detection.get('typing_bypass', False) else '❌ 無効'}")
         
         embed.add_field(
             name="🔍 検知機能",
@@ -199,8 +201,9 @@ def setup_anti_commands(bot):
             "text_spam": "テキストスパム検知",
             "image_spam": "画像スパム検知", 
             "mention_spam": "メンションスパム検知",
-            "token_spam": "トークン/Webhookスパム検知",
-            "timebase_spam": "タイムベーススパム検知"
+            "token_spam": "トークンスパム検知",
+            "timebase_spam": "タイムベーススパム検知",
+            "typing_bypass": "Typing Bypass検知"
         }
         
         if feature is None:
