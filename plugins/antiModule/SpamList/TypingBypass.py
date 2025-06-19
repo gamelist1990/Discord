@@ -1,6 +1,8 @@
 import time
 from typing import Any, Callable
 from plugins.antiModule.spam import BaseSpam
+from plugins.antiModule.bypass import MiniAntiBypass
+from plugins.antiModule.config import AntiCheatConfig
 
 
 class TypingBypass(BaseSpam):
@@ -46,6 +48,13 @@ class TypingBypass(BaseSpam):
             return False
         last_typing = TypingBypass.typing_timestamps.get(user_id)
         if last_typing is not None and current_time - last_typing <= TypingBypass.TYPING_BYPASS_WINDOW:
+            return False
+        if await MiniAntiBypass.should_bypass(message):
+            return False
+        from plugins.antiModule.config import AntiCheatConfig
+        if not await AntiCheatConfig.is_enabled(message.guild):
+            return False
+        if not await AntiCheatConfig.is_detection_enabled(message.guild, "typing_bypass"):
             return False
         print(f"Typing Bypass detected: {message.author.name} in {message.channel.id}")
         try:
