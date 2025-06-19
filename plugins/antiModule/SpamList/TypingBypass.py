@@ -1,8 +1,9 @@
 import time
 from typing import Any, Callable
+from plugins.antiModule.spam import BaseSpam
 
 
-class TypingBypass:
+class TypingBypass(BaseSpam):
     typing_timestamps = {}
     _bot: Any = None
     _on_typing_handler = None
@@ -55,7 +56,7 @@ class TypingBypass:
             alert_type = "typing_bypass"
             timeout_duration = DEFAULT_TIMEOUT_DURATION
             reason = "Typing Bypass検知による自動タイムアウト"
-            await TextSpam.block_and_notify(
+            await TypingBypass.block_and_notify(
                 message,
                 uid,
                 now,
