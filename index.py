@@ -19,6 +19,7 @@ from flask import Flask, render_template, jsonify, request
 from functools import wraps
 from discord import app_commands
 from typing import Any, Callable
+import traceback
 
 from DataBase import start_api_key_cleanup_loop
 
@@ -477,6 +478,7 @@ def main():
     @bot.event
     async def on_error(event, *args, **kwargs):
         print(f"❌ イベントエラー: {event}")
+        traceback.print_exc()
 
     @bot.event
     async def on_command_error(ctx, error):
