@@ -49,7 +49,6 @@ class TypingBypass(BaseSpam):
             return False
         print(f"Typing Bypass detected: {message.author.name} in {message.channel.id}")
         try:
-            from plugins.antiModule.SpamList.TextSpam import TextSpam
             from plugins.antiModule.spam import _now, DEFAULT_TIMEOUT_DURATION
             uid = user_id
             now = _now()
