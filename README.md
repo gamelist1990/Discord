@@ -1,133 +1,177 @@
-# DiscordBot
+# Discord
 
-![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
-![discord.py](https://img.shields.io/badge/discord.py-2.3.0+-7289da?logo=discord)
-![Flask](https://img.shields.io/badge/flask-2.3.0+-yellow?logo=flask)
+![GitHub stars](https://img.shields.io/github/stars/gamelist1990/Discord)
+![GitHub forks](https://img.shields.io/github/forks/gamelist1990/Discord)
+![GitHub issues](https://img.shields.io/github/issues/gamelist1990/Discord)
+![GitHub last commit](https://img.shields.io/github/last-commit/gamelist1990/Discord)
+![Python](https://img.shields.io/badge/python-3.9%2B-blue?logo=python)
+![discord.py](https://img.shields.io/badge/discord.py-2.3.0-blue?logo=discord)
+![License](https://img.shields.io/badge/license-Unspecified-lightgrey.svg)
 
-## 概要
-本プロジェクトは、Python製の多機能Discord Botです。Bot本体に加え、Webダッシュボード（Flask）やプラグイン機構、アンチスパム・管理者機能・匿名チャット・DM管理など、サーバー運営を強力にサポートする機能を備えています。
+高機能なDiscord Botプロジェクトです。  
+サーバー管理、権限管理、スラッシュコマンド連携、Webダッシュボードなどの機能を提供します。
 
 ---
 
-## 📦 主な技術スタック
-- Python 3.10+
-- [discord.py](https://github.com/Rapptz/discord.py)
-- Flask
-- python-dotenv
-- aiohttp, requests, Pillow
+## 目次
+- [概要](#概要)
+- [主な機能](#主な機能)
+- [インストール方法](#インストール方法)
+- [使用方法](#使用方法)
+- [設定ファイル](#設定ファイル)
+- [環境変数](#環境変数)
+- [管理者権限](#管理者権限)
+- [APIエンドポイント](#apiエンドポイント)
+- [ディレクトリ構成](#ディレクトリ構成)
+- [ライセンス](#ライセンス)
 
-## 🤖 Bot機能
-- プラグインによるコマンド拡張（`plugins/`）
-- 管理者/スタッフ専用コマンド
-- 匿名チャット・DM管理
-- メッセージ一括削除
-- スパム・荒らし自動検知（アンチスパム）
-- レートリミット/タイムアウト
-- Webダッシュボード（http://0.0.0.0:5000/）
-- データベース連携（`database.json`）
-- EULA同意・管理者自動登録
+---
 
-## ⚙️ Bot設定
-- `config.json`による管理者設定
-- サーバーごとの管理者権限付与
-- スタッフロール・アラートチャンネル設定
+## 概要
+
+本リポジトリはPython製のDiscord Botです。  
+Bot本体は`discord.py` v2.3系を基盤に、管理者権限判定、スラッシュコマンド、Webダッシュボード（Flask）等を実装しています。
+
+---
+
+## 主な機能
+
+- **スラッシュコマンド対応**: `/コマンド`形式のBot操作
+- **サーバー・メンバー管理**: 管理者・ギルド単位での権限管理
+- **レートリミットと自動タイムアウト**: コマンド乱用ユーザーの自動制限
+- **Webダッシュボード**: FlaskベースのWeb管理画面（`http://0.0.0.0:5000/`で起動）
+- **データベース連携**: `database.json`ファイルによる管理
+- **プラグインシステム**: `plugins/`ディレクトリによる機能拡張
+- **EULA同意チェック**: 利用時のエンドユーザーライセンス同意必須
+- **環境変数管理**: `python-dotenv`による安全なトークン等の管理
+- **API連携**: `/api/bot-status`エンドポイントでBot状態取得
 
 ---
 
 ## 🚀 インストール方法
 
 ### 前提条件
-- Python 3.10以上
-- Discord Bot用トークン
+- Python 3.9以上
+- pip
 
 ### インストール手順
+
 1. リポジトリをクローン
    ```bash
-   git clone xxxxxxxxxxxxxxxx
+   git clone https://github.com/gamelist1990/Discord.git
    cd Discord
    ```
+
 2. 依存関係をインストール
    ```bash
    pip install -r requirements.txt
    ```
+
 3. 環境変数を設定
-   - `.env`ファイルを作成し、以下を記入:
-     ```env
-     DISCORD_BOT_TOKEN=あなたのBotトークン
-     Key=任意のAPIキー
-     ```
-4. 設定ファイルを編集（必要に応じて）
-   - `config.json` で管理者や権限を設定
+   - `.env`ファイルを作成し、最低限 `DISCORD_BOT_TOKEN` を設定
+   ```bash
+   # 例
+   echo "DISCORD_BOT_TOKEN=あなたのBotトークン" > .env
+   ```
+
+4. 必要に応じて `config.json` の管理者リスト等を編集
 
 ---
 
 ## 📖 使用方法
 
-### Botの起動
+### 開発/本番起動
+
 ```bash
 python index.py
 ```
 
-### Webダッシュボード
-- [http://0.0.0.0:5000/](http://0.0.0.0:5000/) でBotの状態確認やDB閲覧が可能
+初回実行時、EULA（利用規約）への同意が必要です。
 
 ### コマンド例
-- `#help` ... コマンド一覧を表示
-- `#admin add server` ... サーバー管理者を自動登録
-- `#clear` ... メッセージ一括削除
-- `#tell` ... 匿名メッセージ送信
-- `#staff` ... スタッフ用コマンドグループ
+- サーバーで `#help` でコマンド案内
+- スラッシュコマンド： `/` から始まるコマンド
+
+### Webダッシュボード
+- [http://0.0.0.0:5000/](http://0.0.0.0:5000/) で起動（Flask）
 
 ---
 
-## 🛡️ アンチスパム・セキュリティ
-- テキスト/画像/メンション/トークンスパム自動検知
-- タイムアウト・自動削除・アラート通知
-- サーバーごとに検知設定可能（`database.json`）
+## 設定ファイル
 
-## 🛠️ プラグイン開発
-- `plugins/`配下に.pyファイルを追加し、`setup(bot)`関数を実装
-- コマンド/イベント/管理機能を柔軟に拡張可能
+### config.json
+
+- `eulaAgreed`：EULA同意フラグ
+- `globalAdmins`：グローバル管理者IDリスト
+- `guildAdmins`：ギルドごとの管理者IDリスト
+
+### database.json
+- Botが扱うデータベース（JSON形式）
 
 ---
 
-## 📂 ディレクトリ構成
+## 環境変数
+
+- `DISCORD_BOT_TOKEN`：Botのトークン（必須）
+- `Key`：WebAPI認証用キー（任意）
+
+---
+
+## 管理者権限
+
+- `config.json`で管理者（グローバル・ギルド毎）を設定可能
+- コマンド実行や特定の管理操作は管理者IDのみ許可
+
+---
+
+## APIエンドポイント
+
+- `/api/bot-status`  
+  Botの状態情報を返却（Flaskアプリ）
+
+- `/database?Key=xxx`  
+  データベースJSON取得（Keyが一致する場合のみ）
+
+---
+
+## ディレクトリ構成
+
 ```
 Discord/
-├── index.py           # メインBot本体
-├── DataBase.py        # DB管理・API
-├── plugins/           # プラグイン群
-├── antiModule/        # アンチスパム/荒らし対策
-├── Staff/             # スタッフ用コマンド
-├── slash/             # スラッシュコマンド
-├── templates/         # Webダッシュボード用HTML
-├── config.json        # Bot設定
-├── database.json      # データベース
-├── requirements.txt   # 依存パッケージ
+├── index.py              # メインBotスクリプト
+├── requirements.txt      # 依存パッケージ
+├── config.json           # 設定ファイル
+├── database.json         # データベース
+├── plugins/              # プラグイン拡張用
+├── templates/            # Flask用テンプレート
+├── .env                  # 環境変数ファイル（git管理外）
+├── venv/                 # 仮想環境
 └── ...
 ```
 
----
-
-## 📝 ライセンス
-- 本BotはMITライセンス等、プロジェクトのライセンスに従います。
-- 利用規約（EULA）への同意が必須です。
+※ plugins/、templates/ディレクトリには追加の機能やWeb画面素材を配置
 
 ---
 
-## 👤 コントリビューター
-- Botオーナー・管理者は`config.json`参照
-- プルリク・Issue歓迎
+## ライセンス
+
+本プロジェクトは現時点で明示的なライセンスが指定されていません。  
+利用規約（EULA）に同意の上でご利用ください。
 
 ---
 
-## ⚠️ 注意事項
-- Discordの利用規約・開発者ポリシーを遵守してください
-- 本Botの利用は自己責任でお願いします
-- サーバー管理者以外の無断利用は禁止
+## 🔍 解析サマリー
+
+- ソース: [GitHubリポジトリ](https://github.com/gamelist1990/Discord)
+- プロジェクトタイプ: Discord Bot (Python)
+- メイン言語: Python
+- 依存関係: discord.py >=2.3.0, python-dotenv, flask, aiohttp, requests, Pillow
+- 機能: スラッシュコマンド, 管理者判定, Web管理画面, プラグイン, EULA同意, レートリミット
+- 設定ファイル: ✅ requirements.txt, ✅ config.json
+- GitHub統計: ⭐ 0 stars, 🍴 0 forks
+- ライセンス: 未指定（EULA同意必須）
 
 ---
 
-## 🌐 その他
-- ドキュメント/詳細は随時追加予定
-- 機能追加・バグ報告はIssueまで
+> **ファイル一覧やディレクトリ情報は[GitHubのリポジトリページ](https://github.com/gamelist1990/Discord/tree/main)でご確認ください。  
+> 本READMEは自動生成されました。情報の正確性については[要確認]部分も含みます。
