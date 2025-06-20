@@ -3,6 +3,7 @@ from discord.ui import View, Button, Modal, TextInput
 from typing import Callable, Optional, Union
 import inspect
 
+
 class ModalInputView(View):
     """
     ボタンを押すとモーダルまたはボタンインタラクションで値を返す汎用View。
@@ -29,29 +30,34 @@ class ModalInputView(View):
       - on_button_embed: ボタン押下時に返すEmbed (Callable or Embed or None)
       - on_submit_embed: モーダル送信時に返すEmbed (Callable or Embed or None)
     """
-    def __init__(self,
-                 label: str,
-                 *,
-                 on_button: Optional[Callable] = None,
-                 on_submit: Optional[Callable] = None,
-                 modal_title: str = "入力フォーム",
-                 placeholder: str = "ここに入力...",
-                 text_label: str = "入力",
-                 style: discord.ButtonStyle = discord.ButtonStyle.primary,
-                 ephemeral: bool = True,
-                 input_style: str = "short",
-                 min_length: int = 1,
-                 max_length: int = 80,
-                 recipient: Optional[Union[discord.User, discord.Member]] = None,
-                 after_submit: Optional[Callable] = None,
-                 button_emoji: Optional[str] = None,
-                 button_disabled: bool = False,
-                 auto_delete_on_button: bool = False,
-                 allowed_user_id: Optional[int] = None,
-                 on_button_embed: Optional[Union[discord.Embed, Callable]] = None,
-                 on_submit_embed: Optional[Union[discord.Embed, Callable]] = None):
+
+    def __init__(
+        self,
+        label: str,
+        *,
+        on_button: Optional[Callable] = None,
+        on_submit: Optional[Callable] = None,
+        modal_title: str = "入力フォーム",
+        placeholder: str = "ここに入力...",
+        text_label: str = "入力",
+        style: discord.ButtonStyle = discord.ButtonStyle.primary,
+        ephemeral: bool = True,
+        input_style: str = "short",
+        min_length: int = 1,
+        max_length: int = 80,
+        recipient: Optional[Union[discord.User, discord.Member]] = None,
+        after_submit: Optional[Callable] = None,
+        button_emoji: Optional[str] = None,
+        button_disabled: bool = False,
+        auto_delete_on_button: bool = False,
+        allowed_user_id: Optional[int] = None,
+        on_button_embed: Optional[Union[discord.Embed, Callable]] = None,
+        on_submit_embed: Optional[Union[discord.Embed, Callable]] = None,
+    ):
         super().__init__(timeout=300)  # タイムアウトを5分(300秒)に設定
-        self.add_item(self.ModalButton(self, label, style, button_emoji, button_disabled))
+        self.add_item(
+            self.ModalButton(self, label, style, button_emoji, button_disabled)
+        )
         self.modal_title = modal_title
         self.placeholder = placeholder
         self.text_label = text_label
@@ -72,6 +78,7 @@ class ModalInputView(View):
     async def on_timeout(self):
         # タイムアウト時にViewがアタッチされたメッセージを削除
         import discord
+
         if self.message and isinstance(self.message, discord.Message):
             try:
                 await self.message.delete()
@@ -85,7 +92,7 @@ class ModalInputView(View):
             "singleline": discord.TextStyle.short,
             "long": discord.TextStyle.paragraph,
             "multiline": discord.TextStyle.paragraph,
-            "paragraph": discord.TextStyle.paragraph
+            "paragraph": discord.TextStyle.paragraph,
         }
         if isinstance(self.input_style, str):
             return style_map.get(self.input_style.lower(), discord.TextStyle.short)
@@ -95,10 +102,18 @@ class ModalInputView(View):
         def __init__(self, parent, label, style, emoji, disabled):
             super().__init__(label=label, style=style, emoji=emoji, disabled=disabled)
             self.parent = parent
+
         async def callback(self, interaction: discord.Interaction):
-            self.parent.message = getattr(interaction, "message", None)  # メッセージをViewにセット
-            if self.parent.allowed_user_id is not None and interaction.user.id != self.parent.allowed_user_id:
-                await interaction.response.send_message("❌ このボタンはコマンド実行者のみ押せます。", ephemeral=True)
+            self.parent.message = getattr(
+                interaction, "message", None
+            )  # メッセージをViewにセット
+            if (
+                self.parent.allowed_user_id is not None
+                and interaction.user.id != self.parent.allowed_user_id
+            ):
+                await interaction.response.send_message(
+                    "❌ このボタンはコマンド実行者のみ押せます。", ephemeral=True
+                )
                 return
             # Embed返却対応
             if self.parent.on_button_embed:
@@ -108,9 +123,13 @@ class ModalInputView(View):
                     if inspect.isawaitable(embed):
                         embed = await embed
                 if isinstance(embed, discord.Embed):
-                    await interaction.response.send_message(embed=embed, ephemeral=self.parent.ephemeral)
+                    await interaction.response.send_message(
+                        embed=embed, ephemeral=self.parent.ephemeral
+                    )
                 else:
-                    await interaction.response.send_message(content=str(embed), ephemeral=self.parent.ephemeral)
+                    await interaction.response.send_message(
+                        content=str(embed), ephemeral=self.parent.ephemeral
+                    )
                 if self.parent.auto_delete_on_button:
                     msg = getattr(interaction, "message", None)
                     if msg:
@@ -144,13 +163,14 @@ class ModalInputView(View):
                 required=True,
                 style=parent._resolve_text_style(),
                 min_length=parent.min_length,
-                max_length=parent.max_length
+                max_length=parent.max_length,
             )
             self.add_item(self.input)
+
         async def on_submit(self, interaction: discord.Interaction):
             recipient = self.parent.recipient
             if recipient is None:
-                recipient = getattr(self.parent, 'recipient', None)
+                recipient = getattr(self.parent, "recipient", None)
                 if recipient is None:
                     recipient = interaction.user
             # Embed返却対応
@@ -161,12 +181,22 @@ class ModalInputView(View):
                     if inspect.isawaitable(embed):
                         embed = await embed
                 if isinstance(embed, discord.Embed):
-                    await interaction.response.send_message(embed=embed, ephemeral=self.parent.ephemeral)
+                    await interaction.response.send_message(
+                        embed=embed, ephemeral=self.parent.ephemeral
+                    )
                 else:
-                    await interaction.response.send_message(content=str(embed), ephemeral=self.parent.ephemeral)
+                    await interaction.response.send_message(
+                        content=str(embed), ephemeral=self.parent.ephemeral
+                    )
             elif self.parent.on_submit:
-                await self.parent.on_submit(interaction, self.input.value, recipient, self.parent)
+                await self.parent.on_submit(
+                    interaction, self.input.value, recipient, self.parent
+                )
             else:
-                await interaction.response.send_message(f"入力値: {self.input.value}", ephemeral=self.parent.ephemeral)
+                await interaction.response.send_message(
+                    f"入力値: {self.input.value}", ephemeral=self.parent.ephemeral
+                )
             if self.parent.after_submit:
-                await self.parent.after_submit(interaction, self.input.value, recipient, self.parent)
+                await self.parent.after_submit(
+                    interaction, self.input.value, recipient, self.parent
+                )

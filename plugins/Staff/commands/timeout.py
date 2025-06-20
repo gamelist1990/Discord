@@ -80,9 +80,14 @@ async def timeout_cmd(ctx, member_or_id, seconds_str, *, reason=None):
         await util.send_staff_alert(None, embed=embed)
         
         async def validate_hansei_text(text: str) -> tuple[bool, str]:
-            """反省文の品質をチェックする関数"""
+            """反省文の品質をチェックする関数（緩和版）"""
             import re
-            
+
+            # 緩和条件：特定のキーワードが含まれていればOK
+            relaxed_keywords = ["反省", "申し訳", "お詫び", "ご迷惑", "ご心配", "責任", "改善"]
+            if any(kw in text for kw in relaxed_keywords):
+                return True, "✅ 反省・謝罪のキーワードが含まれているため合格です。"
+
             # 基本チェック：空白のみや極端に短い文字列
             clean_text = text.strip()
             if not clean_text:
@@ -111,20 +116,19 @@ async def timeout_cmd(ctx, member_or_id, seconds_str, *, reason=None):
             # 文字種の多様性チェック
             hiragana_count = len(re.findall(r'[ひらがな]', text))
             katakana_count = len(re.findall(r'[カタカナ]', text))
-            kanji_count = len(re.findall(r'[一-龯]', text))
             alpha_count = len(re.findall(r'[a-zA-Z]', text))
             number_count = len(re.findall(r'[0-9]', text))
             
             # 数字や記号だけの文字列チェック
-            meaningful_chars = hiragana_count + katakana_count + kanji_count + alpha_count
+            meaningful_chars = hiragana_count + katakana_count + alpha_count
             if meaningful_chars < len(clean_text) * 0.7:
                 return False, "❌ 数字や記号だけでなく、文字を使って反省文を書いてください。"
             
             # 適切な文章構造チェック
-            sentences = re.split(r'[。！？]', text)
+            sentences = re.split(r'[。! ?]', text)
             meaningful_sentences = [s.strip() for s in sentences if len(s.strip()) > 5]
             if len(meaningful_sentences) < 2:
-                return False, "❌ 最低でも2つの文章（。！？で区切られた）で反省文を書いてください。"
+                return False, "❌ 最低でも2つの文章（。! ?で区切られた）で反省文を書いてください。"
             
             # キーボード配列チェック（qwerty、asdf等の連続）
             keyboard_patterns = [
@@ -138,7 +142,7 @@ async def timeout_cmd(ctx, member_or_id, seconds_str, *, reason=None):
                     return False, f"❌ キーボード配列の文字列「{pattern}」は使用できません。"
             
             # 単語の多様性チェック（同じ単語が文字数の30%以上を占める）
-            words = re.findall(r'[ぁ-んァ-ヶ一-龯a-zA-Z]+', text)
+            words = re.findall(r'[ぁ-んァ-ヶ一a-zA-Z]+', text)
             if words:
                 most_common_word = max(set(words), key=words.count)
                 if words.count(most_common_word) * len(most_common_word) > len(text) * 0.3:
@@ -173,6 +177,11 @@ async def timeout_cmd(ctx, member_or_id, seconds_str, *, reason=None):
                     description=message,
                     color=0xE74C3C,
                     timestamp=datetime.datetime.now(datetime.timezone.utc)
+                )
+                error_embed.add_field(
+                    name="❗ エラー理由",
+                    value=message,
+                    inline=False
                 )
                 error_embed.add_field(
                     name="📝 改善してください",
