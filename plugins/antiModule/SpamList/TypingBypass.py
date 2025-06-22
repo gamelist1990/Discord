@@ -40,6 +40,10 @@ class TypingBypass(BaseSpam):
         # 10文字以下のメッセージは許可
         if len(content) <= 20:
             return False
+        import re
+        url_pattern = r"^(https?://[\w\-._~:/?#\[\]@!$&'()*+,;=%]+)$"
+        if re.fullmatch(url_pattern, content.strip()):
+            return False
         if user_id not in TypingBypass.typing_timestamps:
             try:
                 await message.delete()

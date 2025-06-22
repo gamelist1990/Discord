@@ -40,7 +40,9 @@
         "image_spam": true,
         "mention_spam": true,
         "token_spam": true,
-        "timebase_spam": true
+        "timebase_spam": true,
+        "typing_bypass": true,
+        "forward_spam": true
       }
     },
     "staffRole": "1380114633087783002"
