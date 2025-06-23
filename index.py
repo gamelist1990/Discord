@@ -260,12 +260,17 @@ def registerSlashCommand(bot, name, description, callback):
 # --- Botイベントハンドラ管理 ---
 _event_handlers = {}
 
+# --- 改良版: 既存の@bot.event登録も多重登録に含める ---
 def registerBotEvent(bot, event_name: str, handler):
     if bot is None:
         print(f"[registerBotEvent] bot is None, cannot register {event_name}")
         return
     if event_name not in _event_handlers:
         _event_handlers[event_name] = {}
+        # 既存の@bot.event登録済み関数も最初に保存
+        orig = getattr(bot, event_name, None)
+        if orig and not any(orig is h for h in _event_handlers[event_name].values()):
+            _event_handlers[event_name][id(orig)] = orig
     # 多重登録防止: 既に同じhandlerがあればスキップ
     if handler in _event_handlers[event_name].values():
         return
