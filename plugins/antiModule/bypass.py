@@ -30,7 +30,7 @@ class MiniAntiBypass:
             if hasattr(message.author, "roles"):
                 for role in message.author.roles:
                     if role.id == bypass_role_id:
-                        print(f"[miniAnti] Bypass granted for user {message.author} (role: {role.name})")
+                        #print(f"[miniAnti] Bypass granted for user {message.author} (role: {role.name})")
                         return True
             
             return False

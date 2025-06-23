@@ -31,22 +31,26 @@
     "hansei_reports": {},
     "youtube_channels": [
       {
-        "channel_id": "PEX_nonitizyou",
-        "rss_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UC-dL458_TAWW1d1Ydjp3D6w",
-        "notification_channel": 1099973068941692988,
-        "interval": 5,
-        "last_video_id": null,
-        "was_live": false,
-        "created_at": "2025-06-23T02:06:55.192316"
-      },
-      {
         "channel_id": "UCue_c1nQyNwfZa2cLR4fo7g",
+        "channel_name": "こう君！",
         "rss_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCue_c1nQyNwfZa2cLR4fo7g",
         "notification_channel": 1099973068941692988,
-        "interval": 5,
-        "last_video_id": null,
+        "interval": 1,
+        "last_video_id": "NBWnybPdM08",
         "was_live": false,
-        "created_at": "2025-06-23T02:15:49.531703"
+        "created_at": "2025-06-23T11:56:53.500178",
+        "last_check": "2025-06-23T21:41:27.473417+09:00"
+      },
+      {
+        "channel_id": "UCjJmYy279ehSYSwR1A3fXtA",
+        "channel_name": "マグロヘッド",
+        "rss_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCjJmYy279ehSYSwR1A3fXtA",
+        "notification_channel": 1099973068941692988,
+        "interval": 5,
+        "last_video_id": "LO8BhlkIWgI",
+        "was_live": false,
+        "created_at": "2025-06-23T21:11:27.386573+09:00",
+        "last_check": "2025-06-23T21:40:27.062277+09:00"
       }
     ]
   },
@@ -70,15 +74,18 @@
   "1304404938138320926": {
     "AntiCheat": {
       "alert_channel": 1315126004368539648,
-      "bypass_role": null,
+      "bypass_role": 1327287410635051049,
       "enabled": true,
       "detection_settings": {
         "text_spam": true,
         "image_spam": true,
         "mention_spam": true,
         "token_spam": true,
-        "timebase_spam": true
+        "timebase_spam": true,
+        "typing_bypass": true,
+        "forward_spam": true
       }
-    }
+    },
+    "staffRole": "1327286399610654732"
   }
 }
