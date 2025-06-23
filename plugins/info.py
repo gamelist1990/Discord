@@ -149,66 +149,15 @@ class VideoNotificationModal(discord.ui.Modal, title="動画通知設定"):
             )
 
     async def extract_channel_id(self, url):
-        if debug:
-            print(f"[DEBUG] extract_channel_id: url={url}")
-
-        """YouTubeチャンネルURLからチャンネルID（UC...）を抽出。/c/や/user/や/@はまずパターン、UCでなければHTMLから取得（og:url対応）"""
-        import re
-        import aiohttp
-
-        patterns = [
-            r"youtube\.com/channel/([a-zA-Z0-9_-]+)",
-            r"youtube\.com/c/([a-zA-Z0-9_-]+)",
-            r"youtube\.com/user/([a-zA-Z0-9_-]+)",
-            r"youtube\.com/@([a-zA-Z0-9_-]+)",
-        ]
-        for pattern in patterns:
-            m = re.search(pattern, url)
-            if m:
-                val = m.group(1)
-                if val.startswith("UC"):
-                    return val
-                # そうでなければHTMLからchannelIdまたはog:urlを抽出
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(url) as resp:
-                        if resp.status != 200:
-                            return None
-                        html = await resp.text()
-                        # 1. "channelId":"UCxxxx" を探す
-                        m2 = re.search(r'"channelId":"(UC[^"]+)"', html)
-                        if m2:
-                            return m2.group(1)
-                        # 2. <meta property="og:url" content="https://www.youtube.com/channel/UCxxxx"> を探す
-                        m3 = re.search(
-                            r'<meta property="og:url" content="https://www.youtube.com/channel/(UC[^"]+)">',
-                            html,
-                        )
-                        if m3:
-                            return m3.group(1)
-                        return None
-        return None
+        """YouTubeRSSAPIを使用してチャンネルIDを取得"""
+        youtube_api = YouTubeRSSAPI()
+        return await youtube_api.extract_channel_id(url)
 
     async def extract_channel_name(self, channel_id):
-        if debug:
-            print(f"[DEBUG] extract_channel_name: channel_id={channel_id}")
-
-        """YouTube APIを使わずにRSSフィードやHTMLからチャンネル名を取得"""
-        # RSSフィードからチャンネル名を取得
-        import aiohttp
-        import xml.etree.ElementTree as ET
-        rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(rss_url) as resp:
-                    if resp.status == 200:
-                        xml_content = await resp.text()
-                        root = ET.fromstring(xml_content)
-                        title_elem = root.find(".//{http://www.w3.org/2005/Atom}title")
-                        if title_elem is not None:
-                            return title_elem.text
-        except Exception:
-            pass
-        return None
+        """YouTubeRSSAPIを使用してチャンネル名を取得"""
+        youtube_api = YouTubeRSSAPI()
+        channel_info = await youtube_api.get_channel_info(channel_id)
+        return channel_info["channel_name"] if channel_info else None
 
     async def save_notification_config(
         self, guild_id, channel_id, channel_name, rss_url, notification_channel_id, interval
@@ -478,10 +427,7 @@ class VideoNotificationHandler:
     """
     def __init__(self, bot):
         self.bot = bot
-        self.session = None
-        self.request_cache = {}
-        self.last_request_time = {}
-        self.min_request_interval = 60
+        self.youtube_api = YouTubeRSSAPI()  # YouTube RSS API インスタンス
         if debug:
             print(f"[DEBUG] VideoNotificationHandler initialized for bot={bot}")
 
@@ -535,57 +481,41 @@ class VideoNotificationHandler:
     async def check_one_channel(self, guild, channel_info):
         if debug:
             print(f"[DEBUG] check_one_channel: guild={guild.id}, channel={channel_info.get('channel_id')}")
+        
         channel_id = channel_info.get("channel_id")
         if not channel_id:
             if debug:
                 print("[DEBUG] チャンネルIDが未設定")
             return
-        # RSSから最新動画情報を取得
-        data = await self.fetch_channel_data_with_retry(channel_id)
-        if not data or not data["entries"]:
+        
+        # YouTubeRSSAPIを使用して最新動画情報を取得
+        latest_video = await self.youtube_api.get_latest_video_info(channel_id)
+        if not latest_video:
             if debug:
                 print(f"[DEBUG] RSS取得失敗または動画なし: {channel_id}")
             return
-        latest_entry = data["entries"][0]
-        video_id_elem = latest_entry.find("{http://www.youtube.com/xml/schemas/2015}videoId")
-        if video_id_elem is None:
-            if debug:
-                print(f"[DEBUG] videoId要素なし: {channel_id}")
-            return
-        latest_video_id = video_id_elem.text
+        
+        latest_video_id = latest_video["video_id"]
+        
         # 初回: last_video_idがNoneなら記録のみ
         if not channel_info.get("last_video_id"):
             if debug:
                 print(f"[DEBUG] 初回記録: {channel_id} → {latest_video_id}")
             self.update_channel_state(guild.id, channel_info, video_id=latest_video_id)
             return
+        
         # 既に通知済みなら何もしない
         if channel_info.get("last_video_id") == latest_video_id:
             if debug:
                 print(f"[DEBUG] 既に最新動画を通知済み: {latest_video_id}")
             self.update_channel_state(guild.id, channel_info)
             return
+        
         # 新着動画があれば通知
-        # 動画情報をパース
-        title_elem = latest_entry.find("{http://www.w3.org/2005/Atom}title")
-        author_elem = latest_entry.find("{http://www.w3.org/2005/Atom}author/{http://www.w3.org/2005/Atom}name")
-        published_elem = latest_entry.find("{http://www.w3.org/2005/Atom}published")
-        video_url = f"https://www.youtube.com/watch?v={latest_video_id}"
-
-        video_info = {
-            "video_id": latest_video_id,
-            "title": title_elem.text if title_elem is not None else "No Title",
-            "author": author_elem.text if author_elem is not None else "Unknown",
-            "published": published_elem.text if published_elem is not None else datetime.now(JST).isoformat(),
-            "url": video_url,
-        }
-
-        # ライブ配信か判定
-        is_live = await self.check_if_live(latest_video_id)
-        if is_live:
-            await self.send_live_notification(guild, channel_info, video_info)
+        if latest_video["is_live"]:
+            await self.send_live_notification(guild, channel_info, latest_video)
         else:
-            await self.send_video_notification(guild, channel_info, video_info)
+            await self.send_video_notification(guild, channel_info, latest_video)
 
         # 通知後、状態を更新
         self.update_channel_state(guild.id, channel_info, video_id=latest_video_id)
@@ -593,20 +523,13 @@ class VideoNotificationHandler:
             print(f"[DEBUG] 新着動画通知済み: {latest_video_id}")
 
     async def fetch_channel_name(self, rss_url):
+        """非推奨: YouTubeRSSAPIを使用してください"""
         if debug:
-            print(f"[DEBUG] fetch_channel_name: rss_url={rss_url}")
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(rss_url) as resp:
-                    if resp.status == 200:
-                        xml = await resp.text()
-                        root = ET.fromstring(xml)
-                        title_elem = root.find(".//{http://www.w3.org/2005/Atom}title")
-                        if title_elem is not None:
-                            return title_elem.text
-        except Exception as e:
-            print(f"[VideoNotificationHandler] チャンネル名取得失敗: {e}")
-        return None
+            print(f"[DEBUG] fetch_channel_name (deprecated): rss_url={rss_url}")
+        # YouTubeRSSAPIへの移行用ラッパー
+        channel_id = rss_url.split("channel_id=")[-1]
+        channel_info = await self.youtube_api.get_channel_info(channel_id)
+        return channel_info["channel_name"] if channel_info else None
 
     def get_next_update_time(self, channel_info):
         if debug:
@@ -624,70 +547,48 @@ class VideoNotificationHandler:
         return None
 
     async def fetch_channel_data_with_retry(self, channel_id, max_retries=3):
+        """非推奨: YouTubeRSSAPI.get_latest_videos()を使用してください"""
         if debug:
-            print(f"[DEBUG] fetch_channel_data_with_retry: channel_id={channel_id}")
-        for attempt in range(max_retries):
-            try:
-                rss_url = (
-                    f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
-                )
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(rss_url) as response:
-                        if response.status == 200:
-                            xml_content = await response.text()
-                            root = ET.fromstring(xml_content)
-                            entries = root.findall(".//{http://www.w3.org/2005/Atom}entry")
-                            return {
-                                "xml_content": xml_content,
-                                "entries": entries,
-                                "channel_id": channel_id,
-                            }
-                        elif response.status == 429:  # Too Many Requests
-                            wait_time = 60 * (attempt + 1)  # 指数バックオフ
-                            print(
-                                f"[{datetime.now().strftime('%H:%M:%S')}] レート制限検出: {wait_time}秒待機"
-                            )
-                            await asyncio.sleep(wait_time)
-                        else:
-                            print(
-                                f"[{datetime.now().strftime('%H:%M:%S')}] HTTP {response.status}: {channel_id}"
-                            )
-                            return None
-            except Exception as e:
-                print(
-                    f"[{datetime.now().strftime('%H:%M:%S')}] リクエストエラー (試行 {attempt + 1}): {e}"
-                )
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(5 * (attempt + 1))
+            print(f"[DEBUG] fetch_channel_data_with_retry (deprecated): channel_id={channel_id}")
+        # YouTubeRSSAPIへの移行用ラッパー
+        videos_data = await self.youtube_api.get_latest_videos(channel_id, max_retries)
+        if videos_data:
+            return {
+                "xml_content": videos_data["xml_content"],
+                "entries": [self._video_to_entry(v) for v in videos_data["videos"]],
+                "channel_id": channel_id,
+            }
         return None
+    
+    def _video_to_entry(self, video_info):
+        """動画情報を旧形式のentryオブジェクト風に変換（互換性のため）"""
+        # この関数は移行期間中のみ使用
+        class MockElem:
+            def __init__(self, text):
+                self.text = text
+        
+        class MockEntry:
+            def __init__(self, video_info):
+                self.video_info = video_info
+            
+            def find(self, tag):
+                if "videoId" in tag:
+                    return MockElem(self.video_info["video_id"])
+                elif "title" in tag:
+                    return MockElem(self.video_info["title"])
+                elif "name" in tag:
+                    return MockElem(self.video_info["author"])
+                elif "published" in tag:
+                    return MockElem(self.video_info["published"])
+                return None
+        
+        return MockEntry(video_info)
 
     async def check_if_live(self, video_id):
+        """非推奨: YouTubeRSSAPI.check_if_live()を使用してください"""
         if debug:
-            print(f"[DEBUG] check_if_live: video_id={video_id}")
-        try:
-            # キャッシュを使わず毎回リクエスト
-            video_url = f"https://www.youtube.com/watch?v={video_id}"
-            timeout = aiohttp.ClientTimeout(total=10)
-            async with aiohttp.ClientSession() as session:
-                async with session.get(video_url, timeout=timeout) as response:
-                    if response.status != 200:
-                        return False
-                    content = await response.text()
-                    is_live = (
-                        '"isLive":true' in content
-                        or '"isLiveContent":true' in content
-                        or "hlsManifestUrl" in content
-                    )
-                    await asyncio.sleep(1)
-                    return is_live
-        except asyncio.TimeoutError:
-            print(
-                f"[{datetime.now().strftime('%H:%M:%S')}] ライブ判定タイムアウト: {video_id}"
-            )
-            return False
-        except Exception as e:
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] ライブ判定エラー: {e}")
-            return False
+            print(f"[DEBUG] check_if_live (deprecated): video_id={video_id}")
+        return await self.youtube_api.check_if_live(video_id)
 
     async def send_video_notification(self, guild, channel_info, video_info):
         if debug:
@@ -823,6 +724,211 @@ class VideoNotificationHandler:
         update_guild_data(guild_id, "youtube_channels", channels)
 
 
+# --- YouTube RSS API クラス ---
+class YouTubeRSSAPI:
+    """
+    YouTube RSS フィードを扱うためのAPI化されたクラス
+    チャンネル情報の取得、動画情報の取得、ライブ判定などを統合
+    """
+    
+    def __init__(self):
+        self.session = None
+        if debug:
+            print("[DEBUG] YouTubeRSSAPI initialized")
+    
+    async def extract_channel_id(self, url):
+        """YouTubeチャンネルURLからチャンネルID（UC...）を抽出"""
+        if debug:
+            print(f"[DEBUG] YouTubeRSSAPI.extract_channel_id: url={url}")
+        
+        patterns = [
+            r"youtube\.com/channel/([a-zA-Z0-9_-]+)",
+            r"youtube\.com/c/([a-zA-Z0-9_-]+)",
+            r"youtube\.com/user/([a-zA-Z0-9_-]+)",
+            r"youtube\.com/@([a-zA-Z0-9_-]+)",
+        ]
+        
+        for pattern in patterns:
+            m = re.search(pattern, url)
+            if m:
+                val = m.group(1)
+                if val.startswith("UC"):
+                    return val
+                # UCでなければHTMLから取得
+                return await self._extract_channel_id_from_html(url)
+        return None
+    
+    async def _extract_channel_id_from_html(self, url):
+        """HTMLページからチャンネルIDを抽出"""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as resp:
+                    if resp.status != 200:
+                        return None
+                    html = await resp.text()
+                    # 1. "channelId":"UCxxxx" を探す
+                    m = re.search(r'"channelId":"(UC[^"]+)"', html)
+                    if m:
+                        return m.group(1)
+                    # 2. og:url を探す
+                    m = re.search(
+                        r'<meta property="og:url" content="https://www.youtube.com/channel/(UC[^"]+)">',
+                        html,
+                    )
+                    if m:
+                        return m.group(1)
+        except Exception as e:
+            if debug:
+                print(f"[DEBUG] HTMLからのチャンネルID取得エラー: {e}")
+        return None
+    
+    async def get_channel_info(self, channel_id):
+        """チャンネル情報を取得（名前、RSS URL等）"""
+        if debug:
+            print(f"[DEBUG] YouTubeRSSAPI.get_channel_info: channel_id={channel_id}")
+        
+        rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+        channel_name = await self._extract_channel_name_from_rss(rss_url)
+        
+        return {
+            "channel_id": channel_id,
+            "channel_name": channel_name or channel_id,
+            "rss_url": rss_url
+        }
+    
+    async def _extract_channel_name_from_rss(self, rss_url):
+        """RSSフィードからチャンネル名を取得"""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(rss_url) as resp:
+                    if resp.status == 200:
+                        xml_content = await resp.text()
+                        root = ET.fromstring(xml_content)
+                        title_elem = root.find(".//{http://www.w3.org/2005/Atom}title")
+                        if title_elem is not None:
+                            return title_elem.text
+        except Exception as e:
+            if debug:
+                print(f"[DEBUG] RSSからのチャンネル名取得エラー: {e}")
+        return None
+    
+    async def get_latest_videos(self, channel_id, max_retries=3):
+        """チャンネルの最新動画リストを取得"""
+        if debug:
+            print(f"[DEBUG] YouTubeRSSAPI.get_latest_videos: channel_id={channel_id}")
+        
+        for attempt in range(max_retries):
+            try:
+                rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(rss_url) as response:
+                        if response.status == 200:
+                            xml_content = await response.text()
+                            return self._parse_rss_videos(xml_content, channel_id)
+                        elif response.status == 429:  # Rate limit
+                            wait_time = 60 * (attempt + 1)
+                            if debug:
+                                print(f"[DEBUG] レート制限: {wait_time}秒待機")
+                            await asyncio.sleep(wait_time)
+                        else:
+                            if debug:
+                                print(f"[DEBUG] HTTP {response.status}: {channel_id}")
+                            return None
+            except Exception as e:
+                if debug:
+                    print(f"[DEBUG] RSS取得エラー (試行 {attempt + 1}): {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(5 * (attempt + 1))
+        return None
+    
+    def _parse_rss_videos(self, xml_content, channel_id):
+        """RSS XMLから動画情報をパース"""
+        try:
+            root = ET.fromstring(xml_content)
+            entries = root.findall(".//{http://www.w3.org/2005/Atom}entry")
+            
+            videos = []
+            for entry in entries:
+                video_info = self._parse_video_entry(entry)
+                if video_info:
+                    videos.append(video_info)
+            
+            return {
+                "channel_id": channel_id,
+                "videos": videos,
+                "xml_content": xml_content
+            }
+        except Exception as e:
+            if debug:
+                print(f"[DEBUG] RSS解析エラー: {e}")
+            return None
+    
+    def _parse_video_entry(self, entry):
+        """個別の動画エントリーをパース"""
+        try:
+            video_id_elem = entry.find("{http://www.youtube.com/xml/schemas/2015}videoId")
+            title_elem = entry.find("{http://www.w3.org/2005/Atom}title")
+            author_elem = entry.find("{http://www.w3.org/2005/Atom}author/{http://www.w3.org/2005/Atom}name")
+            published_elem = entry.find("{http://www.w3.org/2005/Atom}published")
+            
+            if video_id_elem is None:
+                return None
+            
+            video_id = video_id_elem.text
+            return {
+                "video_id": video_id,
+                "title": title_elem.text if title_elem is not None else "No Title",
+                "author": author_elem.text if author_elem is not None else "Unknown",
+                "published": published_elem.text if published_elem is not None else datetime.now(JST).isoformat(),
+                "url": f"https://www.youtube.com/watch?v={video_id}",
+            }
+        except Exception as e:
+            if debug:
+                print(f"[DEBUG] 動画エントリー解析エラー: {e}")
+            return None
+    
+    async def check_if_live(self, video_id):
+        """動画がライブ配信かどうかをチェック"""
+        if debug:
+            print(f"[DEBUG] YouTubeRSSAPI.check_if_live: video_id={video_id}")
+        
+        try:
+            video_url = f"https://www.youtube.com/watch?v={video_id}"
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession() as session:
+                async with session.get(video_url, timeout=timeout) as response:
+                    if response.status != 200:
+                        return False
+                    content = await response.text()
+                    is_live = (
+                        '"isLive":true' in content
+                        or '"isLiveContent":true' in content
+                        or "hlsManifestUrl" in content
+                    )
+                    await asyncio.sleep(1)  # Rate limiting
+                    return is_live
+        except asyncio.TimeoutError:
+            if debug:
+                print(f"[DEBUG] ライブ判定タイムアウト: {video_id}")
+            return False
+        except Exception as e:
+            if debug:
+                print(f"[DEBUG] ライブ判定エラー: {e}")
+            return False
+    
+    async def get_latest_video_info(self, channel_id):
+        """チャンネルの最新動画情報を取得（通知チェック用）"""
+        videos_data = await self.get_latest_videos(channel_id)
+        if not videos_data or not videos_data["videos"]:
+            return None
+        
+        latest_video = videos_data["videos"][0]
+        is_live = await self.check_if_live(latest_video["video_id"])
+        latest_video["is_live"] = is_live
+        
+        return latest_video
+
+
 # --- infoコマンド本体（Cog不要、help.py方式） ---
 @commands.command()
 async def info(ctx):
@@ -840,7 +946,7 @@ async def info(ctx):
     )
 
     embed.add_field(
-        name="� 主要機能",
+        name="## 主要機能",
         value="```diff\n"
         "+ YouTubeチャンネルの新着動画通知\n"
         "+ 🔴 ライブ配信開始通知（ベータ版）\n"
