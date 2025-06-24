@@ -39,7 +39,7 @@
         "last_video_id": "NBWnybPdM08",
         "was_live": false,
         "created_at": "2025-06-23T11:56:53.500178",
-        "last_check": "2025-06-23T21:41:27.473417+09:00"
+        "last_check": "2025-06-24T14:15:27.626244+09:00"
       },
       {
         "channel_id": "UCjJmYy279ehSYSwR1A3fXtA",
@@ -50,7 +50,18 @@
         "last_video_id": "LO8BhlkIWgI",
         "was_live": false,
         "created_at": "2025-06-23T21:11:27.386573+09:00",
-        "last_check": "2025-06-23T21:40:27.062277+09:00"
+        "last_check": "2025-06-24T14:15:28.258487+09:00"
+      },
+      {
+        "channel_id": "UC-dL458_TAWW1d1Ydjp3D6w",
+        "channel_name": "PEXの日常",
+        "rss_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UC-dL458_TAWW1d1Ydjp3D6w",
+        "notification_channel": 1099973068941692988,
+        "interval": 5,
+        "last_video_id": "CCRuqR7Vp5U",
+        "was_live": false,
+        "created_at": "2025-06-24T14:15:11.281484+09:00",
+        "last_check": "2025-06-24T14:15:28.723201+09:00"
       }
     ]
   },

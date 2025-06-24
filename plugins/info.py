@@ -9,6 +9,7 @@ import os
 import re
 from plugins import register_command
 from DataBase import get_guild_value, update_guild_data
+from plugins.common_ui import ModalInputView
 
 
 # --- デバッグ用フラグ ---
@@ -288,6 +289,37 @@ class VideoNotificationView(discord.ui.View):
             updated += 1
         await interaction.followup.send(f"✅ 一斉更新が完了しました（{updated}件チェック）", ephemeral=True)
 
+    @discord.ui.button(
+        label="💬 メッセージ設定", style=discord.ButtonStyle.secondary, emoji="💬"
+    )
+    async def customize_message(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        if debug:
+            print(f"[DEBUG] customize_message called by user={interaction.user.id}")
+        if not interaction.guild:
+            await interaction.response.send_message(
+                "❌ このコマンドはサーバー内でのみ使用できます。", ephemeral=True
+            )
+            return
+        # カスタムメッセージ設定用のセレクトメニューを表示
+        view = CustomMessageView(interaction.guild.id)
+        if (
+            view.select.options
+            and len(view.select.options) > 0
+            and view.select.options[0].value != "none"
+        ):
+            await interaction.response.send_message(
+                "💬 **通知メッセージをカスタマイズ**\nメッセージをカスタマイズするチャンネルを選択してください:", 
+                view=view, 
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                "❌ カスタマイズ可能なチャンネルがありません。先にチャンネルを設定してください。", 
+                ephemeral=True
+            )
+
     async def create_notification_list_embed(self, guild_id):
         if debug:
             print(f"[DEBUG] create_notification_list_embed: guild_id={guild_id}")
@@ -313,6 +345,19 @@ class VideoNotificationView(discord.ui.View):
             status_emoji = "🔴" if channel_info.get("was_live", False) else "⚫"
             status_text = "ライブ中" if channel_info.get("was_live", False) else "オフライン"
             
+            # カスタムメッセージ設定状況
+            has_custom_video = bool(channel_info.get("custom_video_message"))
+            has_custom_live = bool(channel_info.get("custom_live_message"))
+            custom_status = ""
+            if has_custom_video and has_custom_live:
+                custom_status = "💬 動画・ライブ両方カスタム"
+            elif has_custom_video:
+                custom_status = "💬 動画のみカスタム"
+            elif has_custom_live:
+                custom_status = "💬 ライブのみカスタム"
+            else:
+                custom_status = "📝 デフォルトメッセージ"
+            
             # 次回更新予定時刻
             last_check = channel_info.get("last_check")
             interval = channel_info.get("interval", 30)
@@ -335,6 +380,7 @@ class VideoNotificationView(discord.ui.View):
                     f"🔔 **通知先**: <#{channel_info.get('notification_channel', 'Unknown')}>\n"
                     f"⏰ **間隔**: `{interval}分`  📊 **状態**: `{status_text}`\n"
                     f"🔄 **次回更新**: {next_update_str}\n"
+                    f"{custom_status}\n"
                     f"📅 **設定日**: `{channel_info.get('created_at', 'N/A')[:10]}`"
                 ),
                 inline=False,
@@ -606,38 +652,60 @@ class VideoNotificationHandler:
             if not channel:
                 return
 
-            # 公開時間をフォーマット
-            published_dt = datetime.fromisoformat(
-                video_info["published"].replace("Z", "+00:00")
-            )
-            published_str = published_dt.strftime("%Y年%m月%d日 %H:%M")
+            # カスタムメッセージがあるかチェック
+            custom_message = channel_info.get("custom_video_message")
+            
+            if custom_message:
+                # カスタムメッセージを使用（プレースホルダーを置換）
+                published_dt = datetime.fromisoformat(
+                    video_info["published"].replace("Z", "+00:00")
+                )
+                published_str = published_dt.strftime("%Y年%m月%d日 %H:%M")
+                
+                message = custom_message.format(
+                    title=video_info["title"],
+                    url=video_info["url"],
+                    author=video_info["author"],
+                    published=published_str
+                )
+                
+                await channel.send(message)
+                print(
+                    f"[{datetime.now().strftime('%H:%M:%S')}] カスタム動画通知送信: {video_info['title']}"
+                )
+            else:
+                # デフォルトのEmbed形式で送信
+                published_dt = datetime.fromisoformat(
+                    video_info["published"].replace("Z", "+00:00")
+                )
+                published_str = published_dt.strftime("%Y年%m月%d日 %H:%M")
 
-            embed = discord.Embed(
-                title="🎬 新着動画が投稿されました！",
-                description=(
-                    f"📺 **{video_info['author']}** が新しい動画を投稿しました！\n\n"
-                    f"🎥 **[{video_info['title']}]({video_info['url']})**\n\n"
-                    f"📅 **投稿日時**: {published_str}  |  🎯 **[今すぐ視聴する]({video_info['url']})**"
-                ),
-                color=0xFF4500,  # オレンジレッド
-                timestamp=datetime.now(JST),
-            )
+                embed = discord.Embed(
+                    title="🎬 新着動画が投稿されました！",
+                    description=(
+                        f"📺 **{video_info['author']}** が新しい動画を投稿しました！\n\n"
+                        f"🎥 **[{video_info['title']}]({video_info['url']})**\n\n"
+                        f"📅 **投稿日時**: {published_str}  |  🎯 **[今すぐ視聴する]({video_info['url']})**"
+                    ),
+                    color=0xFF4500,  # オレンジレッド
+                    timestamp=datetime.now(JST),
+                )
 
-            # サムネイルを設定
-            thumbnail_url = (
-                f"https://img.youtube.com/vi/{video_info['video_id']}/maxresdefault.jpg"
-            )
-            embed.set_image(url=thumbnail_url)
+                # サムネイルを設定
+                thumbnail_url = (
+                    f"https://img.youtube.com/vi/{video_info['video_id']}/maxresdefault.jpg"
+                )
+                embed.set_image(url=thumbnail_url)
 
-            embed.set_footer(
-                text=f"🎬 {video_info['author']} • YouTube新着動画通知", 
-                icon_url="https://youtube.com/favicon.ico"
-            )
+                embed.set_footer(
+                    text=f"🎬 {video_info['author']} • YouTube新着動画通知", 
+                    icon_url="https://youtube.com/favicon.ico"
+                )
 
-            await channel.send(embed=embed)
-            print(
-                f"[{datetime.now().strftime('%H:%M:%S')}] 動画通知送信: {video_info['title']}"
-            )
+                await channel.send(embed=embed)
+                print(
+                    f"[{datetime.now().strftime('%H:%M:%S')}] 動画通知送信: {video_info['title']}"
+                )
 
         except Exception as e:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] 動画通知送信エラー: {e}")
@@ -658,52 +726,69 @@ class VideoNotificationHandler:
             if not channel:
                 return
 
-            embed = discord.Embed(
-                title="🔴 ライブ配信が開始されました！",
-                description=f"📡 **{video_info['author']}** がライブ配信を開始しました！\n今すぐ参加して楽しみましょう 🎉",
-                color=0xFF0000,  # 鮮やかな赤
-                timestamp=datetime.now(JST),
-            )
+            # カスタムメッセージがあるかチェック
+            custom_message = channel_info.get("custom_live_message")
+            
+            if custom_message:
+                # カスタムメッセージを使用（プレースホルダーを置換）
+                message = custom_message.format(
+                    title=video_info["title"],
+                    url=video_info["url"],
+                    author=video_info["author"]
+                )
+                
+                await channel.send(message)
+                print(
+                    f"[{datetime.now().strftime('%H:%M:%S')}] カスタムライブ通知送信: {video_info['title']}"
+                )
+            else:
+                # デフォルトのEmbed形式で送信
+                embed = discord.Embed(
+                    title="🔴 ライブ配信が開始されました！",
+                    description=f"📡 **{video_info['author']}** がライブ配信を開始しました！\n今すぐ参加して楽しみましょう 🎉",
+                    color=0xFF0000,  # 鮮やかな赤
+                    timestamp=datetime.now(JST),
+                )
 
-            embed.add_field(
-                name="📺 配信タイトル",
-                value=f"**[{video_info['title']}]({video_info['url']})**",
-                inline=False,
-            )
+                embed.add_field(
+                    name="📺 配信タイトル",
+                    value=f"**[{video_info['title']}]({video_info['url']})**",
+                    inline=False,
+                )
 
-            embed.add_field(
-                name="👤 チャンネル", 
-                value=f"```\n{video_info['author']}\n```", 
-                inline=True
-            )
+                embed.add_field(
+                    name="👤 チャンネル", 
+                    value=f"```\n{video_info['author']}\n```", 
+                    inline=True
+                )
 
-            embed.add_field(
-                name="� 配信状態", 
-                value="```\n🟢 LIVE配信中\n```", 
-                inline=True
-            )
+                embed.add_field(
+                    name="📡 配信状態", 
+                    value="```\n🟢 LIVE配信中\n```", 
+                    inline=True
+                )
 
-            embed.add_field(
-                name="🎯 今すぐ視聴",
-                value=f"**[🔗 配信を見る]({video_info['url']})**",
-                inline=True,
-            )
+                embed.add_field(
+                    name="🎯 今すぐ視聴",
+                    value=f"**[🔗 配信を見る]({video_info['url']})**",
+                    inline=True,
+                )
 
-            # サムネイルを設定
-            thumbnail_url = (
-                f"https://img.youtube.com/vi/{video_info['video_id']}/maxresdefault.jpg"
-            )
-            embed.set_image(url=thumbnail_url)
+                # サムネイルを設定
+                thumbnail_url = (
+                    f"https://img.youtube.com/vi/{video_info['video_id']}/maxresdefault.jpg"
+                )
+                embed.set_image(url=thumbnail_url)
 
-            embed.set_footer(
-                text="🔴 YouTubeライブ配信通知システム", 
-                icon_url="https://youtube.com/favicon.ico"
-            )
+                embed.set_footer(
+                    text="🔴 YouTubeライブ配信通知システム", 
+                    icon_url="https://youtube.com/favicon.ico"
+                )
 
-            await channel.send(embed=embed)
-            print(
-                f"[{datetime.now().strftime('%H:%M:%S')}] ライブ通知送信: {video_info['title']}"
-            )
+                await channel.send(embed=embed)
+                print(
+                    f"[{datetime.now().strftime('%H:%M:%S')}] ライブ通知送信: {video_info['title']}"
+                )
 
         except Exception as e:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] ライブ通知送信エラー: {e}")
@@ -954,6 +1039,7 @@ async def info(ctx):
         "+ 複数チャンネル同時監視\n"
         "+ XMLフィード活用（API不要）\n"
         "+ 高度な状態管理\n"
+        "+ 💬 カスタム通知メッセージ\n"
         "```",
         inline=False,
     )
@@ -981,12 +1067,12 @@ async def info(ctx):
     )
 
     embed.add_field(
-        name="🆕 ベータ機能",
+        name="💬 カスタマイズ機能",
         value="```\n"
-        "🔴 ライブ配信検知\n"
-        "📊 配信状態追跡\n"
-        "🔄 リアルタイム状態管理\n"
-        "⚡ 即座に通知\n"
+        "� 動画・ライブ通知メッセージ\n"
+        "� プレースホルダー対応\n"
+        "🎨 チャンネル別個別設定\n"
+        "🔄 デフォルトに戻す機能\n"
         "```",
         inline=True,
     )
@@ -1002,11 +1088,289 @@ async def info(ctx):
     await ctx.send(embed=embed, view=view)
 
 
+class CustomMessageView(discord.ui.View):
+    """カスタムメッセージ設定用のセレクトメニュー"""
+    def __init__(self, guild_id):
+        super().__init__(timeout=300)
+        if debug:
+            print(f"[DEBUG] CustomMessageView initialized for guild={guild_id}")
+        self.guild_id = guild_id
+        self.select = self.create_message_select()
+        self.add_item(self.select)
+
+    def create_message_select(self):
+        if debug:
+            print(f"[DEBUG] create_message_select for guild={self.guild_id}")
+
+        """カスタムメッセージ設定用セレクトメニューを作成"""
+        options = []
+
+        channels = get_guild_value(self.guild_id, "youtube_channels", [])
+
+        for channel_info in channels:
+            channel_id = channel_info.get("channel_id", "Unknown")
+            channel_name = channel_info.get("channel_name") or channel_id
+            notification_channel = channel_info.get("notification_channel", "Unknown")
+            
+            # カスタムメッセージの設定状況を表示
+            has_custom = bool(channel_info.get("custom_video_message") or channel_info.get("custom_live_message"))
+            status_text = "✅ カスタム設定済み" if has_custom else "📝 デフォルト"
+            
+            options.append(
+                discord.SelectOption(
+                    label=f"{channel_name}",
+                    description=f"通知先: #{notification_channel} | {status_text}",
+                    value=channel_id,
+                    emoji="💬"
+                )
+            )
+
+        if not options:
+            options.append(
+                discord.SelectOption(
+                    label="カスタマイズ可能なチャンネルがありません",
+                    description="先にチャンネルを設定してください",
+                    value="none",
+                )
+            )
+
+        select = discord.ui.Select(placeholder="メッセージをカスタマイズするチャンネルを選択...", options=options)
+        select.callback = self.message_callback
+        return select
+
+    async def message_callback(self, interaction: discord.Interaction):
+        if debug:
+            print(f"[DEBUG] message_callback called by user={interaction.user.id}")
+
+        if self.select.values[0] == "none":
+            await interaction.response.send_message(
+                "❌ カスタマイズ可能なチャンネルがありません。", ephemeral=True
+            )
+            return
+
+        channel_id = self.select.values[0]
+        
+        # 現在のチャンネル情報を取得
+        channels = get_guild_value(self.guild_id, "youtube_channels", [])
+        channel_info = None
+        for ch in channels:
+            if ch.get("channel_id") == channel_id:
+                channel_info = ch
+                break
+        
+        if not channel_info:
+            await interaction.response.send_message(
+                "❌ チャンネル情報が見つかりません。", ephemeral=True
+            )
+            return
+
+        # カスタムメッセージ設定画面を表示
+        view = CustomMessageTypeView(self.guild_id, channel_id, channel_info)
+        
+        channel_name = channel_info.get("channel_name") or channel_id
+        embed = discord.Embed(
+            title="💬 通知メッセージのカスタマイズ",
+            description=f"📺 **{channel_name}** の通知メッセージを設定できます。\n\n設定したいメッセージの種類を選択してください：",
+            color=0x9932CC,  # ダークバイオレット
+        )
+        
+        # 現在の設定状況を表示
+        current_video = channel_info.get("custom_video_message", "デフォルト")
+        current_live = channel_info.get("custom_live_message", "デフォルト")
+        
+        embed.add_field(
+            name="🎬 動画通知メッセージ",
+            value=f"```\n{current_video[:100]}{'...' if len(current_video) > 100 else ''}\n```" if current_video != "デフォルト" else "`デフォルトメッセージを使用`",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🔴 ライブ通知メッセージ",
+            value=f"```\n{current_live[:100]}{'...' if len(current_live) > 100 else ''}\n```" if current_live != "デフォルト" else "`デフォルトメッセージを使用`",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="📝 使用可能なプレースホルダー",
+            value=(
+                "`{title}` - 動画/配信タイトル\n"
+                "`{url}` - 動画/配信URL\n"
+                "`{author}` - チャンネル名\n"
+                "`{published}` - 公開日時（動画のみ）"
+            ),
+            inline=False
+        )
+        
+        embed.set_footer(text="💬 YouTube通知メッセージカスタマイズ", icon_url="https://youtube.com/favicon.ico")
+        
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+
+class CustomMessageTypeView(discord.ui.View):
+    """動画/ライブメッセージの選択画面"""
+    def __init__(self, guild_id, channel_id, channel_info):
+        super().__init__(timeout=300)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.channel_info = channel_info
+        if debug:
+            print(f"[DEBUG] CustomMessageTypeView initialized: guild={guild_id}, channel={channel_id}")
+
+    @discord.ui.button(label="🎬 動画通知メッセージ", style=discord.ButtonStyle.primary, emoji="🎬")
+    async def video_message(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if debug:
+            print(f"[DEBUG] video_message button clicked by user={interaction.user.id}")
+        
+        current_message = self.channel_info.get("custom_video_message", "")
+        
+        view = ModalInputView(
+            label="💬 動画通知メッセージを設定",
+            modal_title="🎬 動画通知メッセージのカスタマイズ",
+            text_label="動画通知メッセージ",
+            placeholder="カスタムメッセージを入力 | {title} {url} {author} {published} が使用可能",
+            input_style="paragraph",
+            min_length=1,
+            max_length=2000,
+            on_submit=self.save_video_message,
+            ephemeral=True
+        )
+        
+        # 現在のメッセージがある場合は初期値として設定
+        if current_message:
+            # ModalInputViewに初期値を設定する方法を追加する必要がある場合
+            pass
+            
+        await interaction.response.send_message(
+            f"🎬 **動画通知メッセージの設定**\n\n現在の設定: `{current_message or 'デフォルト'}`\n\n"
+            f"📝 **使用可能なプレースホルダー:**\n"
+            f"`{{title}}` - 動画タイトル\n"
+            f"`{{url}}` - 動画URL\n"
+            f"`{{author}}` - チャンネル名\n"
+            f"`{{published}}` - 公開日時\n\n"
+            f"下のボタンを押してメッセージを編集してください:",
+            view=view,
+            ephemeral=True
+        )
+
+    @discord.ui.button(label="🔴 ライブ通知メッセージ", style=discord.ButtonStyle.danger, emoji="🔴")
+    async def live_message(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if debug:
+            print(f"[DEBUG] live_message button clicked by user={interaction.user.id}")
+        
+        current_message = self.channel_info.get("custom_live_message", "")
+        
+        view = ModalInputView(
+            label="💬 ライブ通知メッセージを設定",
+            modal_title="🔴 ライブ通知メッセージのカスタマイズ",
+            text_label="ライブ通知メッセージ",
+            placeholder="ライブ通知メッセージを入力 | {title} {url} {author} が使用可能",
+            input_style="paragraph",
+            min_length=1,
+            max_length=2000,
+            on_submit=self.save_live_message,
+            ephemeral=True
+        )
+        
+        await interaction.response.send_message(
+            f"🔴 **ライブ通知メッセージの設定**\n\n現在の設定: `{current_message or 'デフォルト'}`\n\n"
+            f"📝 **使用可能なプレースホルダー:**\n"
+            f"`{{title}}` - 配信タイトル\n"
+            f"`{{url}}` - 配信URL\n"
+            f"`{{author}}` - チャンネル名\n\n"
+            f"下のボタンを押してメッセージを編集してください:",
+            view=view,
+            ephemeral=True
+        )
+
+    @discord.ui.button(label="🔄 デフォルトに戻す", style=discord.ButtonStyle.secondary, emoji="🔄")
+    async def reset_messages(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if debug:
+            print(f"[DEBUG] reset_messages button clicked by user={interaction.user.id}")
+        
+        # カスタムメッセージを削除してデフォルトに戻す
+        channels = get_guild_value(self.guild_id, "youtube_channels", [])
+        for i, ch in enumerate(channels):
+            if ch.get("channel_id") == self.channel_id:
+                if "custom_video_message" in ch:
+                    del ch["custom_video_message"]
+                if "custom_live_message" in ch:
+                    del ch["custom_live_message"]
+                channels[i] = ch
+                break
+        
+        update_guild_data(self.guild_id, "youtube_channels", channels)
+        
+        embed = discord.Embed(
+            title="✅ デフォルトメッセージに戻しました",
+            description=f"📺 **{self.channel_info.get('channel_name', self.channel_id)}** の通知メッセージをデフォルトに戻しました。",
+            color=0x32CD32  # ライムグリーン
+        )
+        embed.set_footer(text="🔄 メッセージリセット完了", icon_url="https://youtube.com/favicon.ico")
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    async def save_video_message(self, interaction, value, recipient, view):
+        """動画通知メッセージを保存"""
+        if debug:
+            print(f"[DEBUG] save_video_message: guild={self.guild_id}, channel={self.channel_id}, message_length={len(value)}")
+        
+        channels = get_guild_value(self.guild_id, "youtube_channels", [])
+        for i, ch in enumerate(channels):
+            if ch.get("channel_id") == self.channel_id:
+                ch["custom_video_message"] = value
+                channels[i] = ch
+                break
+        
+        update_guild_data(self.guild_id, "youtube_channels", channels)
+        
+        embed = discord.Embed(
+            title="✅ 動画通知メッセージを保存しました",
+            description=f"🎬 **{self.channel_info.get('channel_name', self.channel_id)}** の動画通知メッセージを更新しました。",
+            color=0x32CD32
+        )
+        embed.add_field(
+            name="💬 新しいメッセージ",
+            value=f"```\n{value[:500]}{'...' if len(value) > 500 else ''}\n```",
+            inline=False
+        )
+        embed.set_footer(text="🎬 動画メッセージ設定完了", icon_url="https://youtube.com/favicon.ico")
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    async def save_live_message(self, interaction, value, recipient, view):
+        """ライブ通知メッセージを保存"""
+        if debug:
+            print(f"[DEBUG] save_live_message: guild={self.guild_id}, channel={self.channel_id}, message_length={len(value)}")
+        
+        channels = get_guild_value(self.guild_id, "youtube_channels", [])
+        for i, ch in enumerate(channels):
+            if ch.get("channel_id") == self.channel_id:
+                ch["custom_live_message"] = value
+                channels[i] = ch
+                break
+        
+        update_guild_data(self.guild_id, "youtube_channels", channels)
+        
+        embed = discord.Embed(
+            title="✅ ライブ通知メッセージを保存しました",
+            description=f"🔴 **{self.channel_info.get('channel_name', self.channel_id)}** のライブ通知メッセージを更新しました。",
+            color=0x32CD32
+        )
+        embed.add_field(
+            name="💬 新しいメッセージ",
+            value=f"```\n{value[:500]}{'...' if len(value) > 500 else ''}\n```",
+            inline=False
+        )
+        embed.set_footer(text="🔴 ライブメッセージ設定完了", icon_url="https://youtube.com/favicon.ico")
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
 def setup(bot):
     register_command(
         bot,
         info,
-        aliases=None,
+        aliases=['video', 'youtube', 'live'],  # エイリアスを追加
         admin=False
     )
     if not hasattr(bot, '_video_notification_handler'):
