@@ -22,6 +22,15 @@ from typing import Any, Callable
 import traceback
 
 from DataBase import start_api_key_cleanup_loop
+import utils
+
+# APIサーバー統合用import
+try:
+    import server as api_manager_module
+    API_MANAGER_AVAILABLE = True
+except ImportError:
+    API_MANAGER_AVAILABLE = False
+    print("⚠️ server.py が見つかりません。API管理機能は無効です。")
 
 CONFIG_FILE_NAME = "config.json"
 EULA_TEXT = """
@@ -48,10 +57,9 @@ bot_start_time = None
 server_count = 0
 bot_status = "Starting..."
 
-# 10分ごとのBotオンライン記録用
-isBot = False
-last_isBot_update = None
-isBot_patch = None  # 最新情報のパッチ用
+# API管理機能
+api_manager = None
+api_manager_enabled = False
 
 async def update_isBot_periodically():
     global isBot, last_isBot_update, bot_instance, isBot_patch
@@ -73,77 +81,200 @@ async def update_isBot_periodically():
 # Flask アプリケーション
 app = Flask(__name__)
 
+# グローバル変数の初期化
+isBot = False
+last_isBot_update = None
+isBot_patch = None
+
 
 # Flask ルート定義
 @app.route("/")
 def dashboard():
     return render_template("index.html")
 
-
-# /api/bot-status レート制限用
-status_rate_limit = {
-    'last_access': None,
-    'count': 0
-}
-STATUS_RATE_LIMIT_WINDOW = 3  # 秒
-STATUS_RATE_LIMIT_COUNT = 5   # 3秒間に5回まで
-
-def status_rate_limiter(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        now = datetime.now()
-        last = status_rate_limit['last_access']
-        if last and (now - last).total_seconds() < STATUS_RATE_LIMIT_WINDOW:
-            status_rate_limit['count'] += 1
-        else:
-            status_rate_limit['count'] = 1
-        status_rate_limit['last_access'] = now
-        if status_rate_limit['count'] > STATUS_RATE_LIMIT_COUNT:
-            return jsonify({'error': 'Too many requests'}), 429
-        return f(*args, **kwargs)
-    return decorated_function
-
-@app.route("/api/bot-status")
-def api_bot_status():
-    global bot_instance, bot_start_time, server_count, bot_status, isBot_patch
-    uptime = ""
-    if bot_start_time:
-        uptime_delta = datetime.now() - bot_start_time
-        days = uptime_delta.days
-        hours, remainder = divmod(uptime_delta.seconds, 3600)
-        minutes, seconds = divmod(remainder, 60)
-        uptime = f"{days}日 {hours:02d}:{minutes:02d}:{seconds:02d}"
-
-    patch = isBot_patch if isBot_patch else {'isBot': False, 'bot_name': 'Bot', 'timestamp': None}
-    return jsonify({
-        "bot_name": patch['bot_name'],
-        "status": bot_status,
-        "server_count": server_count,
-        "uptime": uptime,
-        "start_time": bot_start_time.isoformat() if bot_start_time else None,
-        "isBot": patch['isBot'],
-        "last_isBot_update": patch['timestamp']
-    })
-
-@app.route('/database')
-def get_database():
+@app.route("/api/network/info")
+def api_network_info():
+    """ネットワーク情報API"""
     access_key = os.environ.get('Key')
-    req_key = request.args.get('Key')
+    req_key = request.headers.get('X-API-Key') or request.args.get('Key')
+    
     if access_key and req_key != access_key:
         return jsonify({'error': 'Forbidden'}), 403
+    
+    global_ip = utils.get_global_ip()
+    local_ip = utils.get_local_ip()
+    network_interfaces = utils.get_network_info()
+    
+    return jsonify({
+        'global_ip': global_ip,
+        'local_ip': local_ip,
+        'interfaces': network_interfaces,
+        'ports': {
+            'bot_dashboard': 5000,
+            'api_manager': 5001 if api_manager_enabled else None
+        },
+        'timestamp': datetime.now().isoformat()
+    })
+
+@app.route("/api/system/info")
+def api_system_info():
+    """システム情報API"""
+    access_key = os.environ.get('Key')
+    req_key = request.headers.get('X-API-Key') or request.args.get('Key')
+    
+    if access_key and req_key != access_key:
+        return jsonify({'error': 'Forbidden'}), 403
+    
+    system_info = utils.get_system_info()
+    global_ip = utils.get_global_ip()
+    local_ip = utils.get_local_ip()
+    
+    return jsonify({
+        'system': system_info,
+        'network': {
+            'global_ip': global_ip,
+            'local_ip': local_ip
+        },
+        'bot': {
+            'name': bot_instance.user.name if bot_instance and bot_instance.user else 'Bot',
+            'status': bot_status,
+            'server_count': server_count,
+            'start_time': bot_start_time.isoformat() if bot_start_time else None
+        },
+        'timestamp': datetime.now().isoformat()
+    })
+
+@app.route("/api/ip")
+def api_ip_info():
+    """IP情報のみを返すシンプルなAPI"""
+    access_key = os.environ.get('Key')
+    req_key = request.headers.get('X-API-Key') or request.args.get('Key')
+    
+    # 認証なしでも利用可能（パブリックAPI）
+    if access_key and req_key and req_key != access_key:
+        return jsonify({'error': 'Forbidden'}), 403
+    
+    global_ip = utils.get_global_ip()
+    local_ip = utils.get_local_ip()
+    
+    return jsonify({
+        'global_ip': global_ip,
+        'local_ip': local_ip,
+        'timestamp': datetime.now().isoformat()
+    })
+
+@app.route("/api/ports")
+def api_ports_info():
+    """ポート情報API"""
+    access_key = os.environ.get('Key')
+    req_key = request.headers.get('X-API-Key') or request.args.get('Key')
+    
+    if access_key and req_key != access_key:
+        return jsonify({'error': 'Forbidden'}), 403
+    
     try:
-        with open('database.json', 'r', encoding='utf-8') as f:
-            data = f.read()
-        return app.response_class(data, mimetype='application/json')
+        listening_ports = utils.get_listening_ports()
+        
+        return jsonify({
+            'listening_ports': listening_ports,
+            'bot_ports': {
+                'dashboard': 5000,
+                'api_manager': 5001 if api_manager_enabled else None
+            },
+            'global_ip': utils.get_global_ip(),
+            'local_ip': utils.get_local_ip(),
+            'timestamp': datetime.now().isoformat()
+        })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': f'ポート情報取得エラー: {str(e)}'}), 500
+
+@app.route("/api/health")
+def api_health_check():
+    """ヘルスチェックAPI"""
+    return jsonify({
+        'status': 'healthy',
+        'bot_online': bot_instance is not None and bot_instance.is_ready() if bot_instance else False,
+        'api_manager_enabled': api_manager_enabled,
+        'timestamp': datetime.now().isoformat(),
+        'uptime': (datetime.now() - bot_start_time).total_seconds() if bot_start_time else 0
+    })
+
+@app.route("/api/full-status")
+def api_full_status():
+    """完全なステータス情報API"""
+    access_key = os.environ.get('Key')
+    req_key = request.headers.get('X-API-Key') or request.args.get('Key')
+    
+    if access_key and req_key != access_key:
+        return jsonify({'error': 'Forbidden'}), 403
+    
+    global_ip = utils.get_global_ip()
+    local_ip = utils.get_local_ip()
+    system_info = utils.get_system_info()
+    network_info = utils.get_network_info()
+    
+    uptime = ""
+    if bot_start_time:
+        uptime = utils.format_uptime(bot_start_time)
+    
+    return jsonify({
+        'network': {
+            'global_ip': global_ip,
+            'local_ip': local_ip,
+            'interfaces': network_info
+        },
+        'system': system_info,
+        'bot': {
+            'name': bot_instance.user.name if bot_instance and bot_instance.user else 'Bot',
+            'status': bot_status,
+            'server_count': server_count,
+            'uptime': uptime,
+            'start_time': bot_start_time.isoformat() if bot_start_time else None,
+            'is_ready': bot_instance.is_ready() if bot_instance else False
+        },
+        'services': {
+            'dashboard_port': 5000,
+            'api_manager_port': 5001 if api_manager_enabled else None,
+            'api_manager_enabled': api_manager_enabled
+        },
+        'timestamp': datetime.now().isoformat()
+    })
+
+@app.route("/api/server/address")
+def api_simple_address():
+    """サーバーのIPとポート情報を返すシンプルなAPI"""
+    global_ip = utils.get_global_ip()
+    local_ip = utils.get_local_ip()
+    
+    return jsonify({
+        'server': {
+            'global_ip': global_ip,
+            'local_ip': local_ip,
+            'ports': {
+                'dashboard': 5000,
+                'api_manager': 5001 if api_manager_enabled else None
+            }
+        },
+        'timestamp': datetime.now().isoformat()
+    })
 
 def registerFlask(app, bot_instance):
     """
     Flask拡張APIの登録を一元化する関数。
     必要なAPI登録関数をここでまとめて呼び出す。
     """
-    # 他のAPI
+    global api_manager, api_manager_enabled
+    
+    # API管理機能を初期化
+    if API_MANAGER_AVAILABLE:
+        try:
+            import server as api_manager_module
+            api_manager = api_manager_module.integrate_with_flask_app(app)
+            api_manager_enabled = True
+            print("✔ API管理機能を有効化しました")
+        except Exception as e:
+            print(f"❌ API管理機能の初期化に失敗: {e}")
+            api_manager_enabled = False
 
 
 def run_flask():
@@ -154,15 +285,11 @@ def run_flask():
 
 # 設定ファイルの読み書き
 def load_config():
-    if not os.path.exists(CONFIG_FILE_NAME):
-        return {}
-    with open(CONFIG_FILE_NAME, "r", encoding="utf-8") as f:
-        return json.load(f)
+    return utils.load_config_file(CONFIG_FILE_NAME)
 
 
 def save_config(config):
-    with open(CONFIG_FILE_NAME, "w", encoding="utf-8") as f:
-        json.dump(config, f, ensure_ascii=False, indent=2)
+    return utils.save_config_file(CONFIG_FILE_NAME, config)
 
 
 # EULA同意確認
@@ -260,7 +387,6 @@ def registerSlashCommand(bot, name, description, callback):
 # --- Botイベントハンドラ管理 ---
 _event_handlers = {}
 
-# --- 改良版: 既存の@bot.event登録も多重登録に含める ---
 def registerBotEvent(bot, event_name: str, handler):
     if bot is None:
         print(f"[registerBotEvent] bot is None, cannot register {event_name}")
@@ -299,7 +425,7 @@ def unregisterBotEvent(bot, event_name: str, handler):
 
 # Bot起動
 def main():
-    global bot_instance, bot_start_time, server_count, bot_status, system
+    global bot_instance, bot_start_time, server_count, bot_status
 
     load_dotenv()
     config = load_config()
@@ -347,35 +473,8 @@ def main():
                 f"✔ Botオーナー {app_info.owner} ({owner_id}) をグローバル管理者に自動登録しました。"
             )
         
-        # --- ここから最適化: 不要なコマンドがある場合のみ一括削除・同期 ---
-        try:
-            for guild in bot.guilds:
-                # Discord上に登録されているコマンド一覧
-                remote_cmds = await bot.tree.fetch_commands(guild=guild)
-                remote_names = {cmd.name for cmd in remote_cmds}
-                # Botが管理しているコマンド一覧
-                local_cmds = bot.tree.get_commands(guild=guild)
-                local_names = {cmd.name for cmd in local_cmds}
-                # 不要なコマンドが存在する場合のみ削除・同期
-                if not remote_names.issubset(local_names):
-                    bot.tree.clear_commands(guild=guild)
-                    await bot.tree.sync(guild=guild)
-                    print(f"✔ ギルド {guild.name}({guild.id}) の不要なスラッシュコマンドを一括削除・再同期しました。")
-        except Exception as e:
-            print(f"❌ ギルドコマンド一括削除・同期エラー: {e}")
-        # --- ここまで最適化 ---
-        
         # プラグインのロード
         await load_plugins(bot)
-
-        # --- ここで一括同期 ---
-        try:
-            for guild in bot.guilds:
-                await bot.tree.sync(guild=guild)
-            print("✔ 全ギルドのスラッシュコマンドを一括同期しました。")
-        except Exception as e:
-            print(f"❌ スラッシュコマンド一括同期エラー: {e}")
-        # --- ここまで ---
 
         # Botステータス
         await bot.change_presence(
@@ -414,7 +513,6 @@ def main():
         now = datetime.now()
         # コマンド名取得
         cmd_name = message.content[1:].split()[0] if message.content.startswith(PREFIX) else ""
-        from index import isCommand
         is_cmd = isCommand(cmd_name)
         # コマンド使用時のレート制限（厳しめ）
         if is_cmd:
@@ -518,8 +616,6 @@ def isCommand(cmd_name):
     if bot_instance and hasattr(bot_instance, 'commands'):
         return any(c.name == cmd_name for c in bot_instance.commands)
     return False
-
-
 
 
 if __name__ == "__main__":

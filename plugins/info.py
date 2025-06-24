@@ -1370,7 +1370,7 @@ def setup(bot):
     register_command(
         bot,
         info,
-        aliases=['video', 'youtube', 'live'],  # エイリアスを追加
+        aliases=None,
         admin=False
     )
     if not hasattr(bot, '_video_notification_handler'):
