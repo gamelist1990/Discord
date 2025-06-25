@@ -92,179 +92,22 @@ isBot_patch = None
 @app.route("/")
 def dashboard():
     return render_template("index.html")
-
-@app.route("/api/network/info")
-def api_network_info():
-    """ネットワーク情報API"""
-    access_key = os.environ.get('Key')
-    req_key = request.headers.get('X-API-Key') or request.args.get('Key')
-    
-    if access_key and req_key != access_key:
-        return jsonify({'error': 'Forbidden'}), 403
-    
-    global_ip = utils.get_global_ip()
-    local_ip = utils.get_local_ip()
-    network_interfaces = utils.get_network_info()
-    
-    return jsonify({
-        'global_ip': global_ip,
-        'local_ip': local_ip,
-        'interfaces': network_interfaces,
-        'ports': {
-            'bot_dashboard': 5000,
-            'api_manager': 5001 if api_manager_enabled else None
-        },
-        'timestamp': datetime.now().isoformat()
-    })
-
-@app.route("/api/system/info")
-def api_system_info():
-    """システム情報API"""
-    access_key = os.environ.get('Key')
-    req_key = request.headers.get('X-API-Key') or request.args.get('Key')
-    
-    if access_key and req_key != access_key:
-        return jsonify({'error': 'Forbidden'}), 403
-    
-    system_info = utils.get_system_info()
-    global_ip = utils.get_global_ip()
-    local_ip = utils.get_local_ip()
-    
-    return jsonify({
-        'system': system_info,
-        'network': {
-            'global_ip': global_ip,
-            'local_ip': local_ip
-        },
-        'bot': {
-            'name': bot_instance.user.name if bot_instance and bot_instance.user else 'Bot',
-            'status': bot_status,
-            'server_count': server_count,
-            'start_time': bot_start_time.isoformat() if bot_start_time else None
-        },
-        'timestamp': datetime.now().isoformat()
-    })
-
-@app.route("/api/ip")
-def api_ip_info():
-    """IP情報のみを返すシンプルなAPI"""
-    access_key = os.environ.get('Key')
-    req_key = request.headers.get('X-API-Key') or request.args.get('Key')
-    
-    # 認証なしでも利用可能（パブリックAPI）
-    if access_key and req_key and req_key != access_key:
-        return jsonify({'error': 'Forbidden'}), 403
-    
-    global_ip = utils.get_global_ip()
-    local_ip = utils.get_local_ip()
-    
-    return jsonify({
-        'global_ip': global_ip,
-        'local_ip': local_ip,
-        'timestamp': datetime.now().isoformat()
-    })
-
-@app.route("/api/ports")
-def api_ports_info():
-    """ポート情報API"""
-    access_key = os.environ.get('Key')
-    req_key = request.headers.get('X-API-Key') or request.args.get('Key')
-    
-    if access_key and req_key != access_key:
-        return jsonify({'error': 'Forbidden'}), 403
-    
-    try:
-        listening_ports = utils.get_listening_ports()
-        
-        return jsonify({
-            'listening_ports': listening_ports,
-            'bot_ports': {
-                'dashboard': 5000,
-                'api_manager': 5001 if api_manager_enabled else None
-            },
-            'global_ip': utils.get_global_ip(),
-            'local_ip': utils.get_local_ip(),
-            'timestamp': datetime.now().isoformat()
-        })
-    except Exception as e:
-        return jsonify({'error': f'ポート情報取得エラー: {str(e)}'}), 500
-
-@app.route("/api/health")
-def api_health_check():
-    """ヘルスチェックAPI"""
-    return jsonify({
-        'status': 'healthy',
-        'bot_online': bot_instance is not None and bot_instance.is_ready() if bot_instance else False,
-        'api_manager_enabled': api_manager_enabled,
-        'timestamp': datetime.now().isoformat(),
-        'uptime': (datetime.now() - bot_start_time).total_seconds() if bot_start_time else 0
-    })
-
-@app.route("/api/full-status")
-def api_full_status():
-    """完全なステータス情報API"""
-    access_key = os.environ.get('Key')
-    req_key = request.headers.get('X-API-Key') or request.args.get('Key')
-    
-    if access_key and req_key != access_key:
-        return jsonify({'error': 'Forbidden'}), 403
-    
-    global_ip = utils.get_global_ip()
-    local_ip = utils.get_local_ip()
-    system_info = utils.get_system_info()
-    network_info = utils.get_network_info()
-    
-    uptime = ""
-    if bot_start_time:
-        uptime = utils.format_uptime(bot_start_time)
-    
-    return jsonify({
-        'network': {
-            'global_ip': global_ip,
-            'local_ip': local_ip,
-            'interfaces': network_info
-        },
-        'system': system_info,
-        'bot': {
-            'name': bot_instance.user.name if bot_instance and bot_instance.user else 'Bot',
-            'status': bot_status,
-            'server_count': server_count,
-            'uptime': uptime,
-            'start_time': bot_start_time.isoformat() if bot_start_time else None,
-            'is_ready': bot_instance.is_ready() if bot_instance else False
-        },
-        'services': {
-            'dashboard_port': 5000,
-            'api_manager_port': 5001 if api_manager_enabled else None,
-            'api_manager_enabled': api_manager_enabled
-        },
-        'timestamp': datetime.now().isoformat()
-    })
-
-@app.route("/api/server/address")
-def api_simple_address():
-    """サーバーのIPとポート情報を返すシンプルなAPI"""
-    global_ip = utils.get_global_ip()
-    local_ip = utils.get_local_ip()
-    
-    return jsonify({
-        'server': {
-            'global_ip': global_ip,
-            'local_ip': local_ip,
-            'ports': {
-                'dashboard': 5000,
-                'api_manager': 5001 if api_manager_enabled else None
-            }
-        },
-        'timestamp': datetime.now().isoformat()
-    })
-
 def registerFlask(app, bot_instance):
     """
     Flask拡張APIの登録を一元化する関数。
     必要なAPI登録関数をここでまとめて呼び出す。
     """
     global api_manager, api_manager_enabled
+    
+    # API エンドポイントを登録
+    try:
+        import api
+        # bot_start_timeをappに設定
+        app.bot_start_time = bot_start_time
+        api.register_api_routes(app, bot_instance)
+        print("✔ APIエンドポイントを登録しました")
+    except Exception as e:
+        print(f"❌ APIエンドポイント登録エラー: {e}")
     
     # API管理機能を初期化
     if API_MANAGER_AVAILABLE:
