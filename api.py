@@ -202,21 +202,7 @@ def register_api_routes(app: Flask, bot_instance=None):
             'timestamp': datetime.now().isoformat()
         })
 
-    @app.route("/api/simple/address")
-    def api_simple_address_alias():
-        """シンプルアドレス情報API (別名エンドポイント)"""
-        global_ip = utils.get_global_ip()
-        local_ip = utils.get_local_ip()
-        
-        return jsonify({
-            'global_ip': global_ip,
-            'local_ip': local_ip,
-            'ports': {
-                'dashboard': 5000,
-                'api_manager': 5001
-            },
-            'timestamp': datetime.now().isoformat()
-        })
+    
 
     @app.route("/database", methods=['GET'])
     def api_database():
@@ -348,7 +334,6 @@ def register_api_routes(app: Flask, bot_instance=None):
         ("/api/health", "GET", "ヘルスチェック"),
         ("/api/full-status", "GET", "完全なステータス情報"),
         ("/api/server/address", "GET", "サーバーアドレス情報"),
-        ("/api/simple/address", "GET", "シンプルアドレス情報"),
         ("/database", "GET", "データベース読み取り"),
         ("/api/database/update", "POST", "データベース更新")
     ]

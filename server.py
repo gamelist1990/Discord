@@ -269,7 +269,12 @@ def setup_management_apis(api_manager: APIManager):
         })
     
     def api_simple_address():
-        """シンプルなアドレス情報"""
+        """シンプルなアドレス情報
+        
+        Note: api.pyでも同じエンドポイントが定義されています。
+        api.pyが先に登録されるため、実際にはapi.pyの実装が使用されます。
+        この実装は冗長ですが、APIManagerの使用例として残しています。
+        """
         return jsonify({
             'address': {
                 'global_ip': get_global_ip(),

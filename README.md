@@ -178,11 +178,58 @@ python index.py
 
 ## APIエンドポイント
 
-- `/api/bot-status`  
-  Botの状態情報を返却（Flaskアプリ）
+本BotはFlaskベースのWebAPIを提供しており、`api.py`と`server.py`の2つのモジュールで構成されています。
 
-- `/database?Key=xxx`  
-  データベースJSON取得（Keyが一致する場合のみ）
+### API アーキテクチャ
+
+#### api.py - 静的APIエンドポイント
+Discord Botの基本的な機能を提供するAPIエンドポイントを定義：
+
+**ネットワーク・システム情報**
+- `/api/network/info` - ネットワーク情報（認証必要）
+- `/api/system/info` - システム情報（認証必要）
+- `/api/ip` - IP情報のみ（パブリック）
+- `/api/ports` - ポート情報（認証必要）
+- `/api/health` - ヘルスチェック（パブリック）
+- `/api/full-status` - 完全なステータス情報（認証必要）
+
+**アドレス情報**
+- `/api/server/address` - サーバーアドレス情報
+- `/api/simple/address` - シンプルアドレス情報（パブリック）
+
+**データベース操作**
+- `/database` - database.jsonの読み取り（認証推奨）
+- `/api/database/update` - database.jsonの更新（認証必要）
+
+#### server.py - 動的API管理フレームワーク
+高度なAPI管理機能を提供するライブラリモジュール：
+
+**管理用APIエンドポイント**
+- `/api/management/status` - API登録状況と統計（認証必要）
+- `/api/management/resources` - システムリソース情報（認証必要）
+- `/api/management/port-check` - ポート接続テスト（パブリック）
+- `/api/simple/address` - シンプルアドレス情報（パブリック、重複定義）
+
+**APIManager クラス機能**
+- 🛡️ **認証**: 自動的なAPIキー認証チェック
+- ⏱️ **レート制限**: IPベースでのリクエスト制限
+- 📊 **統計収集**: APIコール数の自動収集
+- 🔧 **動的登録**: 実行時でのAPIエンドポイント追加/削除
+
+### 統合とセットアップ
+
+`index.py`の`registerFlask()`関数で両モジュールを統合：
+
+1. **api.py**: `register_api_routes(app, bot_instance)`で静的エンドポイントを登録
+2. **server.py**: `integrate_with_flask_app(app)`でAPI管理機能を有効化
+3. **Flask起動**: 別スレッドでWebサーバーを`0.0.0.0:5000`で起動
+
+### 認証
+
+**APIキー認証**:
+- 環境変数 `Key` またはHTTPヘッダー `X-API-Key` で認証
+- 一部のパブリックAPIは認証不要
+- 認証が必要なAPIで不正な場合は`403 Forbidden`を返却
 
 ---
 
@@ -191,18 +238,37 @@ python index.py
 ```
 Discord/
 ├── index.py              # メインBotスクリプト
+├── api.py                # 静的APIエンドポイント定義
+├── server.py             # 動的API管理フレームワーク
+├── utils.py              # ユーティリティ関数
+├── DataBase.py           # データベース管理
 ├── requirements.txt      # 依存パッケージ
 ├── config.json           # 設定ファイル
 ├── database.json         # データベース
 ├── video_notifications.json  # 動画通知設定（自動生成）
 ├── plugins/              # プラグイン拡張用
 │   ├── info.py          # 動画通知システム（NEW）
+│   ├── antiModule/      # アンチスパムモジュール
+│   │   ├── flag_system.py    # フラグシステム
+│   │   ├── flag_commands.py  # フラグコマンドUI
+│   │   └── ...          # その他のアンチスパム機能
+│   ├── slash/           # スラッシュコマンド
+│   │   ├── check.py     # ユーザー情報チェック
+│   │   └── ...
 │   └── ...              # その他のプラグイン
 ├── templates/            # Flask用テンプレート
 ├── .env                  # 環境変数ファイル（git管理外）
 ├── venv/                 # 仮想環境
 └── ...
 ```
+
+### ファイル説明
+
+- **index.py**: Discord Botのメインエントリポイント、プラグインロード、Flask統合
+- **api.py**: 静的なAPIエンドポイント（ネットワーク情報、データベース操作など）
+- **server.py**: 動的API管理（認証、レート制限、統計収集）とAPIManager機能
+- **utils.py**: システム情報取得、ネットワーク操作などの共通ユーティリティ
+- **DataBase.py**: JSONベースのデータベース管理とAPI操作
 
 ※ plugins/、templates/ディレクトリには追加の機能やWeb画面素材を配置
 
