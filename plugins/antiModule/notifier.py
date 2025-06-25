@@ -1,5 +1,6 @@
 import discord
 import asyncio
+from plugins.antiModule.types import DetectionTypeManager, DetectionType
 
 class Notifier:
     def __init__(self, message):
@@ -26,24 +27,13 @@ class Notifier:
                 print(f"[miniAnti] Alert channel {alert_channel_id} not found")
                 return
               # アラート種別に応じた色とアイコンを設定
-            alert_config = {
-                "text": {"color": 0xFF6B6B, "icon": "📝", "title": "テキストスパム検知"},
-                "image": {"color": 0xFFB347, "icon": "🖼️", "title": "画像スパム検知"},
-                "mention": {"color": 0xFF69B4, "icon": "📢", "title": "メンションスパム検知"},
-                "token": {"color": 0xFF0000, "icon": "🚨", "title": "トークン/Webhookスパム検知"},
-                "timebase": {"color": 0xFFA500, "icon": "⏰", "title": "タイムベーススパム検知"},
-                "typing_bypass": {"color": 0x00BFFF, "icon": "⌨️", "title": "Typing Bypass検知"},
-                "mass_text": {"color": 0x8B0000, "icon": "🚨📝", "title": "大人数テキストスパム検知"},
-                "mass_image": {"color": 0xFF4500, "icon": "🚨🖼️", "title": "大人数画像スパム検知"},
-                "mass_mention": {"color": 0xDC143C, "icon": "🚨📢", "title": "大人数メンションスパム検知"},
-                "mass_token": {"color": 0x800000, "icon": "🚨⚠️", "title": "大人数トークンスパム検知"},
-                "mass_timebase": {"color": 0x8B4513, "icon": "🚨⏰", "title": "大人数タイムベーススパム検知"},
-                "mass_spam": {"color": 0x000000, "icon": "🚨🔥", "title": "緊急：大人数スパム攻撃検知"},
-                "forward": {"color": 0x4B0082, "icon": "🔁", "title": "転送スパム検知"},
-                "mass_forward": {"color": 0x800080, "icon": "🚨🔁", "title": "大人数転送スパム検知"},
+            # types.pyで定義された情報を使用
+            info = DetectionTypeManager.get_info(alert_type)
+            config = {
+                "color": info.color,
+                "icon": info.emoji,
+                "title": f"{info.name}検知"
             }
-            
-            config = alert_config.get(alert_type, alert_config["text"])
             
             # 大人数スパム用の特別な処理
             is_mass_spam = alert_type.startswith("mass_") or alert_type == "mass_spam"

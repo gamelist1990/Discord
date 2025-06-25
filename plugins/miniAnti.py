@@ -7,12 +7,14 @@ from plugins.antiModule.SpamList.TokenSpam import TokenSpam
 from plugins.antiModule.SpamList.TimebaseSpam import TimebaseSpam
 from plugins.antiModule.SpamList.TypingBypass import TypingBypass
 from plugins.antiModule.SpamList.ForwardSpam import ForwardSpam
+from plugins.antiModule.flag_system import FlagSystem
 from discord.ext.commands import Bot
 from discord import Message
 
 
 def setup(bot: Bot):
     TypingBypass.set_bot(bot)
+    
     @bot.listen("on_message")
     async def miniAnti_on_message(message: Message):
         if message.author.bot or not message.guild:
@@ -28,6 +30,7 @@ def setup(bot: Bot):
             except:
                 pass
             return
+        
         # ブロック中なら削除
         if await Block.is_user_blocked(message):
             try:
@@ -35,6 +38,7 @@ def setup(bot: Bot):
             except:
                 pass
             return
+        
         # 画像・動画スパム判定
         media_blocked = await MediaSpam.check_and_block_media_spam(message)
         if media_blocked:
@@ -44,6 +48,7 @@ def setup(bot: Bot):
             except:
                 pass
             return
+        
         # メンションスパム判定
         mention_blocked = await MentionSpam.check_and_block_mention_spam(message)
         if mention_blocked:
@@ -53,6 +58,7 @@ def setup(bot: Bot):
             except:
                 pass
             return
+        
         # タイムベース検知
         timebase_blocked = await TimebaseSpam.check_and_block_timebase_spam(message)
         if timebase_blocked:
@@ -62,6 +68,7 @@ def setup(bot: Bot):
             except:
                 pass
             return
+        
         # Typing Bypass 検知
         typing_bypass_blocked = await TypingBypass.check_and_block_typing_bypass(message)
         if typing_bypass_blocked:
@@ -71,6 +78,7 @@ def setup(bot: Bot):
             except:
                 pass
             return
+        
         # 転送スパム判定
         forward_blocked = await ForwardSpam.check_and_block_forward_spam(message)
         if forward_blocked:
@@ -80,6 +88,7 @@ def setup(bot: Bot):
             except:
                 pass
             return
+        
         # テキストスパム判定
         blocked = await TextSpam.check_and_block_spam(message)
         if blocked:

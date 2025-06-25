@@ -520,7 +520,29 @@ class Block:
 class Griefing:
     @staticmethod
     async def handle_griefing(message, alert_type="text"):
-        pass
+        """
+        荒らし行為を検知した際の処理
+        フラグシステムと連携してアクションを実行
+        """
+        try:
+            # フラグシステムを有効化していればフラグを追加
+            from plugins.antiModule.flag_system import FlagSystem
+            from plugins.antiModule.config import AntiCheatConfig
+            
+            # フラグシステムが有効かチェック
+            flag_config = await FlagSystem.get_flag_config(message.guild)
+            if flag_config.get("enabled", True):
+                # フラグを追加し、必要に応じてアクションを実行
+                action_executed = await FlagSystem.add_flag(message, alert_type)
+                if action_executed:
+                    print(f"[Griefing] Flag system action executed for user {message.author.id} ({alert_type})")
+                    return  # フラグシステムでアクションが実行されたので、ここで終了
+            
+            # フラグシステムが無効または既定アクションも実行する場合の従来の処理
+            # (必要に応じて既存の処理を追加)
+            
+        except Exception as e:
+            print(f"[Griefing] Error in handle_griefing: {e}")
 
 
 class GuildConfig:

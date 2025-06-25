@@ -13,7 +13,7 @@ from plugins.common_ui import ModalInputView
 
 
 # --- デバッグ用フラグ ---
-debug = True
+debug = False
 
 # --- JSTタイムゾーン定義 ---
 JST = timezone(timedelta(hours=9))
@@ -213,7 +213,7 @@ class VideoNotificationView(discord.ui.View):
             print("[DEBUG] VideoNotificationView initialized")
 
     @discord.ui.button(
-        label="📹 動画通知を設定", style=discord.ButtonStyle.primary, emoji="📹"
+        label="動画通知を設定", style=discord.ButtonStyle.primary, emoji="📹"
     )
     async def setup_notification(
         self, interaction: discord.Interaction, button: discord.ui.Button
@@ -224,7 +224,7 @@ class VideoNotificationView(discord.ui.View):
         await interaction.response.send_modal(modal)
 
     @discord.ui.button(
-        label="📋 設定一覧", style=discord.ButtonStyle.secondary, emoji="📋"
+        label="設定一覧", style=discord.ButtonStyle.secondary, emoji="📋"
     )
     async def list_notifications(
         self, interaction: discord.Interaction, button: discord.ui.Button
@@ -239,7 +239,7 @@ class VideoNotificationView(discord.ui.View):
         embed = await self.create_notification_list_embed(interaction.guild.id)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @discord.ui.button(label="🗑️ 設定削除", style=discord.ButtonStyle.danger, emoji="🗑️")
+    @discord.ui.button(label="設定削除", style=discord.ButtonStyle.danger, emoji="🗑️")
     async def delete_notification(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
@@ -266,7 +266,7 @@ class VideoNotificationView(discord.ui.View):
             )
 
     @discord.ui.button(
-        label="🔄 一斉更新（デバッグ）", style=discord.ButtonStyle.success, emoji="🔄"
+        label="一斉更新（デバッグ）", style=discord.ButtonStyle.success, emoji="🔄"
     )
     async def force_update(
         self, interaction: discord.Interaction, button: discord.ui.Button
@@ -290,7 +290,7 @@ class VideoNotificationView(discord.ui.View):
         await interaction.followup.send(f"✅ 一斉更新が完了しました（{updated}件チェック）", ephemeral=True)
 
     @discord.ui.button(
-        label="💬 メッセージ設定", style=discord.ButtonStyle.secondary, emoji="💬"
+        label="メッセージ設定", style=discord.ButtonStyle.secondary, emoji="💬"
     )
     async def customize_message(
         self, interaction: discord.Interaction, button: discord.ui.Button

@@ -7,6 +7,7 @@ import json
 import sys
 import asyncio
 import threading
+import typing
 from discord.ext import commands
 import discord
 import importlib.util
@@ -361,27 +362,190 @@ async def load_plugins(bot):
             print(f"❌ プラグイン {file} のロードエラー: {e}")
 
 
-def registerSlashCommand(bot, name, description, callback):
+def registerSlashCommand(bot, name, description, callback, parameters=None):
     """
     スラッシュコマンドを動的に登録する関数（使う側でasyncioやawait不要）。
     name: コマンド名
     description: コマンド説明
-    callback: コマンド実行時のコールバック関数 (async def func(interaction))
+    callback: コマンド実行時のコールバック関数 (async def func(interaction, ...))
+    parameters: パラメータのリスト [{"name": "user", "description": "ユーザー", "type": discord.Member, "required": False}, ...]
     """
-    async def _register():
-        tree = bot.tree if hasattr(bot, 'tree') else None
-        if not tree:
-            print("❌ スラッシュコマンドツリーが見つかりません")
-            return
+    tree = bot.tree if hasattr(bot, 'tree') else None
+    if not tree:
+        print("❌ スラッシュコマンドツリーが見つかりません")
+        return
+    
+    # 既存のコマンドがある場合は削除
+    try:
+        existing_command = tree.get_command(name)
+        if existing_command:
+            tree.remove_command(name)
+    except:
+        pass
+    
+    if parameters:
+        # パラメータの数に応じて動的にコマンドを作成
+        param_count = len(parameters)
+        
+        # describe辞書を作成
+        describe_dict = {}
+        for param in parameters:
+            describe_dict[param["name"]] = param.get("description", "")
+        
+        if param_count == 1:
+            # 1つのパラメータの場合
+            param = parameters[0]
+            param_name = param["name"]
+            param_type = param.get("type", str)
+            param_required = param.get("required", True)
+            
+            if param_type == discord.Member:
+                if param_required:
+                    @app_commands.command(name=name, description=description)
+                    @app_commands.describe(**describe_dict)
+                    async def cmd_member_required(interaction: discord.Interaction, user: discord.Member):
+                        try:
+                            await callback(interaction, user)
+                        except Exception as e:
+                            print(f"❌ スラッシュコマンド /{name} 実行エラー: {e}")
+                            await _handle_slash_error(interaction)
+                    tree.add_command(cmd_member_required)
+                else:
+                    @app_commands.command(name=name, description=description)
+                    @app_commands.describe(**describe_dict)
+                    async def cmd_member_optional(interaction: discord.Interaction, user: typing.Optional[discord.Member] = None):
+                        try:
+                            await callback(interaction, user)
+                        except Exception as e:
+                            print(f"❌ スラッシュコマンド /{name} 実行エラー: {e}")
+                            await _handle_slash_error(interaction)
+                    tree.add_command(cmd_member_optional)
+            elif param_type == str:
+                if param_required:
+                    @app_commands.command(name=name, description=description)
+                    @app_commands.describe(**describe_dict)
+                    async def cmd_str_required(interaction: discord.Interaction, text: str):
+                        try:
+                            await callback(interaction, text)
+                        except Exception as e:
+                            print(f"❌ スラッシュコマンド /{name} 実行エラー: {e}")
+                            await _handle_slash_error(interaction)
+                    tree.add_command(cmd_str_required)
+                else:
+                    @app_commands.command(name=name, description=description)
+                    @app_commands.describe(**describe_dict)
+                    async def cmd_str_optional(interaction: discord.Interaction, text: typing.Optional[str] = None):
+                        try:
+                            await callback(interaction, text)
+                        except Exception as e:
+                            print(f"❌ スラッシュコマンド /{name} 実行エラー: {e}")
+                            await _handle_slash_error(interaction)
+                    tree.add_command(cmd_str_optional)
+            elif param_type == int:
+                if param_required:
+                    @app_commands.command(name=name, description=description)
+                    @app_commands.describe(**describe_dict)
+                    async def cmd_int_required(interaction: discord.Interaction, number: int):
+                        try:
+                            await callback(interaction, number)
+                        except Exception as e:
+                            print(f"❌ スラッシュコマンド /{name} 実行エラー: {e}")
+                            await _handle_slash_error(interaction)
+                    tree.add_command(cmd_int_required)
+                else:
+                    @app_commands.command(name=name, description=description)
+                    @app_commands.describe(**describe_dict)
+                    async def cmd_int_optional(interaction: discord.Interaction, number: typing.Optional[int] = None):
+                        try:
+                            await callback(interaction, number)
+                        except Exception as e:
+                            print(f"❌ スラッシュコマンド /{name} 実行エラー: {e}")
+                            await _handle_slash_error(interaction)
+                    tree.add_command(cmd_int_optional)
+            else:
+                # その他の型（基本的なフォールバック）
+                @app_commands.command(name=name, description=description)
+                @app_commands.describe(**describe_dict)
+                async def cmd_other(interaction: discord.Interaction, value: typing.Optional[str] = None):
+                    try:
+                        await callback(interaction, value)
+                    except Exception as e:
+                        print(f"❌ スラッシュコマンド /{name} 実行エラー: {e}")
+                        await _handle_slash_error(interaction)
+                tree.add_command(cmd_other)
+        
+        elif param_count == 2:
+            # 2つのパラメータの場合
+            param1 = parameters[0]
+            param2 = parameters[1]
+            
+            @app_commands.command(name=name, description=description)
+            @app_commands.describe(**describe_dict)
+            async def cmd_two_params(interaction: discord.Interaction, arg1: typing.Any, arg2: typing.Any):
+                try:
+                    await callback(interaction, arg1, arg2)
+                except Exception as e:
+                    print(f"❌ スラッシュコマンド /{name} 実行エラー: {e}")
+                    await _handle_slash_error(interaction)
+            tree.add_command(cmd_two_params)
+        
+        elif param_count == 3:
+            # 3つのパラメータの場合
+            param1 = parameters[0]
+            param2 = parameters[1]
+            param3 = parameters[2]
+            
+            @app_commands.command(name=name, description=description)
+            @app_commands.describe(**describe_dict)
+            async def cmd_three_params(interaction: discord.Interaction, arg1: typing.Any, arg2: typing.Any, arg3: typing.Any):
+                try:
+                    await callback(interaction, arg1, arg2, arg3)
+                except Exception as e:
+                    print(f"❌ スラッシュコマンド /{name} 実行エラー: {e}")
+                    await _handle_slash_error(interaction)
+            tree.add_command(cmd_three_params)
+        
+        else:
+            # 4つ以上のパラメータの場合（一般的なケース）
+            @app_commands.command(name=name, description=description)
+            @app_commands.describe(**describe_dict)
+            async def cmd_multi_params(interaction: discord.Interaction):
+                try:
+                    # 複数パラメータは現在サポートしていないが、フォールバック
+                    await callback(interaction)
+                except Exception as e:
+                    print(f"❌ スラッシュコマンド /{name} 実行エラー: {e}")
+                    await _handle_slash_error(interaction)
+            tree.add_command(cmd_multi_params)
+    else:
+        # パラメータなしの場合（従来通り）
         @app_commands.command(name=name, description=description)
-        async def dynamic_command(interaction: discord.Interaction):
-            await callback(interaction)
-        try:
-            tree.add_command(dynamic_command)
-            print(f"✔ スラッシュコマンド /{name} を登録しました。")
-        except Exception as e:
-            print(f"❌ スラッシュコマンド登録エラー: {e}")
-    asyncio.create_task(_register())
+        async def cmd_no_params(interaction: discord.Interaction):
+            try:
+                await callback(interaction)
+            except Exception as e:
+                print(f"❌ スラッシュコマンド /{name} 実行エラー: {e}")
+                await _handle_slash_error(interaction)
+        tree.add_command(cmd_no_params)
+    
+    print(f"✔ スラッシュコマンド /{name} を登録しました。")
+
+
+async def _handle_slash_error(interaction: discord.Interaction):
+    """スラッシュコマンドエラーの共通処理"""
+    try:
+        if not interaction.response.is_done():
+            await interaction.response.send_message(
+                "❌ コマンドの実行中にエラーが発生しました。", 
+                ephemeral=True
+            )
+        else:
+            await interaction.followup.send(
+                "❌ コマンドの実行中にエラーが発生しました。", 
+                ephemeral=True
+            )
+    except:
+        pass
 
 
 # --- Botイベントハンドラ管理 ---
@@ -475,6 +639,18 @@ def main():
         
         # プラグインのロード
         await load_plugins(bot)
+
+        # スラッシュコマンドの同期
+        try:
+            print("⏳ スラッシュコマンドを同期中...")
+            synced = await bot.tree.sync()
+            print(f"✔ {len(synced)} 個のスラッシュコマンドを同期しました。")
+            if synced:
+                print("📋 同期されたコマンド:")
+                for cmd in synced:
+                    print(f"  - /{cmd.name}: {cmd.description}")
+        except Exception as e:
+            print(f"❌ スラッシュコマンド同期エラー: {e}")
 
         # Botステータス
         await bot.change_presence(

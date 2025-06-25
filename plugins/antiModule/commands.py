@@ -3,6 +3,8 @@ import discord
 from plugins.antiModule.spam import Block
 from plugins.antiModule.config import AntiCheatConfig
 from plugins.antiModule.utils import parse_duration
+from plugins.antiModule.flag_commands import setup_flag_commands
+from plugins.antiModule.types import DetectionTypeManager
 
 from index import is_admin as isAdmin, load_config
 
@@ -10,6 +12,10 @@ from index import is_admin as isAdmin, load_config
 
 def setup_anti_commands(bot):
     config = load_config()
+    
+    # フラグシステムのコマンドを設定
+    setup_flag_commands(bot)
+    
     @commands.group()
     async def anti(ctx):
         """
@@ -17,7 +23,7 @@ def setup_anti_commands(bot):
         詳細は #help で確認できます。
         """
         if ctx.invoked_subcommand is None:
-            await ctx.send("`#anti settings|bypass|unblock|block|list|alert|toggle` サブコマンドを指定してください。例: `#anti settings`")
+            await ctx.send("`#anti settings|bypass|unblock|block|list|alert|toggle|flag` サブコマンドを指定してください。\n例: `#anti settings`, `#anti flag`, `#anti flag quick`")
 
     @anti.command()
     async def settings(ctx):
@@ -42,13 +48,12 @@ def setup_anti_commands(bot):
         # 検知設定
         detection = config['detection_settings']
         detection_status = []
-        detection_status.append(f"📝 テキストスパム: {'✅ 有効' if detection['text_spam'] else '❌ 無効'}")
-        detection_status.append(f"🖼️ 画像スパム: {'✅ 有効' if detection['image_spam'] else '❌ 無効'}")
-        detection_status.append(f"📢 メンションスパム: {'✅ 有効' if detection['mention_spam'] else '❌ 無効'}")
-        detection_status.append(f"🚨 Tokenスパム: {'✅ 有効' if detection['token_spam'] else '❌ 無効'}")
-        detection_status.append(f"⏰ タイムベーススパム: {'✅ 有効' if detection['timebase_spam'] else '❌ 無効'}")
-        detection_status.append(f"⌨️ Typing Bypass: {'✅ 有効' if detection.get('typing_bypass', False) else '❌ 無効'}")
-        detection_status.append(f"🔁 転送スパム: {'✅ 有効' if detection.get('forward_spam', False) else '❌ 無効'}")
+        config_display_names = DetectionTypeManager.get_config_display_names()
+        
+        for config_key, display_name in config_display_names.items():
+            enabled = detection.get(config_key, False)
+            status_icon = '✅ 有効' if enabled else '❌ 無効'
+            detection_status.append(f"{display_name}: {status_icon}")
         
         embed.add_field(
             name="🔍 検知機能",
@@ -198,15 +203,10 @@ def setup_anti_commands(bot):
             return
         
         valid_features = {
-            "enabled": "AntiCheat全体",
-            "text_spam": "テキストスパム検知",
-            "image_spam": "画像スパム検知", 
-            "mention_spam": "メンションスパム検知",
-            "token_spam": "トークンスパム検知",
-            "timebase_spam": "タイムベーススパム検知",
-            "typing_bypass": "Typing Bypass検知",
-            "forward_spam": "転送スパム検知"
+            "enabled": "AntiCheat全体"
         }
+        # 動的に検知機能を追加
+        valid_features.update(DetectionTypeManager.get_config_display_names())
         
         if feature is None:
             # 利用可能な機能を表示
@@ -248,6 +248,47 @@ def setup_anti_commands(bot):
         
         status = "✅ 有効" if new_value else "❌ 無効"
         await ctx.send(f"🔄 **{valid_features[feature]}** を **{status}** に変更しました。")
+
+    @anti.command()
+    async def flag(ctx, subcommand: str = ""):
+        """フラグシステムの設定画面を開く。'quick'を指定すると推奨設定を適用"""
+        if not isAdmin(str(ctx.author.id), str(ctx.guild.id), config):
+            await ctx.send("❌ 管理者権限が必要です。")
+            return
+        
+        if subcommand == "quick":
+            # クイック設定コマンド
+            from plugins.antiModule.flag_commands import _quick_setup_command
+            await _quick_setup_command(ctx)
+            return
+        elif subcommand != "":
+            # 無効なサブコマンド
+            await ctx.send("❌ 無効なサブコマンドです。使用可能: `#anti flag` または `#anti flag quick`")
+            return
+        
+        from plugins.antiModule.flag_commands import FlagConfigView
+        from plugins.antiModule.flag_system import FlagSystem
+        
+        embed = discord.Embed(
+            title="🚩 フラグシステム設定",
+            description="各項目をクリックして設定を変更してください",
+            color=0x3498db
+        )
+        
+        view = FlagConfigView(ctx.guild, ctx.author.id)
+        await view.setup()
+        
+        # 現在の設定概要を表示
+        flag_config = await FlagSystem.get_flag_config(ctx.guild)
+        status = "✅ 有効" if flag_config["enabled"] else "❌ 無効"
+        embed.add_field(
+            name="📊 現在の状態",
+            value=f"**システム状態**: {status}\n**フラグ減衰時間**: {flag_config['decay_hours']}時間\n**設定済みアクション数**: {len(flag_config['actions'])}個",
+            inline=False
+        )
+        
+        message = await ctx.send(embed=embed, view=view)
+        view.message = message
 
     bot.add_command(anti)
 
