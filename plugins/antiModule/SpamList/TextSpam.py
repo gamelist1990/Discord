@@ -5,6 +5,7 @@ import difflib
 import re
 from collections import deque
 import discord
+import aiohttp
 
 class TextSpam(BaseSpam):
     @staticmethod
@@ -55,6 +56,7 @@ class TextSpam(BaseSpam):
         dot_pattern = re.compile(r"(?:[a-zA-Z0-9]\.){4,}[a-zA-Z0-9_]+")
         dot_matches = dot_pattern.findall(content)
         dot_count = len(dot_matches)
+
         if repeated_char_match or repeated_digit_match:
             score += 0.4
         if uuid4_count >= 2:
@@ -63,6 +65,41 @@ class TextSpam(BaseSpam):
             score += 0.25
         if dot_count >= 1:
             score += 0.2
+
+
+        # --- リダイレクト/詐欺URLスコアリング ---
+        redirect_url_keywords = [
+            "bit.ly", "goo.gl", "t.co", "tinyurl.com", "ow.ly", "is.gd", "buff.ly", "rebrand.ly",
+            "cutt.ly", "adf.ly", "shorte.st", "lnkd.in", "rb.gy", "clck.ru", "urlzs.com", "v.gd",
+            "qr.ae", "s.id", "linktr.ee", "redirect", "jump", "forward", "outbound", "phish", "scam",
+            "00m.in"
+        ]
+        dangerous_keywords = [
+            "ozeu","ozeu-x","114514","おぜう","0301"
+        ]
+        url_pattern = re.compile(r"https?://[\w\-./?%&=:#@]+", re.IGNORECASE)
+        urls = url_pattern.findall(content)
+        redirect_url_score = 0
+        # まずURL自体のキーワード判定
+        for url in urls:
+            for keyword in redirect_url_keywords:
+                if keyword in url.lower():
+                    redirect_url_score += 0.5
+        # リダイレクト先の危険ワード判定
+        if urls:
+            async with aiohttp.ClientSession() as session:
+                for url in urls:
+                    try:
+                        async with session.head(url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                            final_url = str(resp.url)
+                            for dkw in dangerous_keywords:
+                                if dkw in final_url.lower():
+                                    redirect_url_score += 1.0
+                                    break
+                    except Exception:
+                        continue
+        if redirect_url_score > 0:
+            score += redirect_url_score
         if score >= TEXT_SPAM_CONFIG["base_threshold"]:
             from plugins.antiModule.spam import spam_log_aggregator
             guild_id = message.guild.id if message.guild else None
