@@ -463,6 +463,7 @@ def main():
     async def on_ready():
         global server_count, bot_status
         print(f"✔ {bot.user} としてログインしました！")
+        utils.set_bot_start_time()
 
         # サーバー数更新
         server_count = len(bot.guilds)

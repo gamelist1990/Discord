@@ -352,3 +352,19 @@ def get_process_info() -> Dict[str, Any]:
         }
     except Exception as e:
         return {'error': f'プロセス情報取得エラー: {str(e)}'}
+
+# --- Bot起動時刻のメモリ記録 ---
+_bot_start_time: Optional[datetime] = None
+
+def set_bot_start_time(start_time: Optional[datetime] = None):
+    """Botの起動時刻をグローバル変数に記録する（明示的に呼び出し）"""
+    global _bot_start_time
+    if start_time is None:
+        start_time = datetime.now()
+    _bot_start_time = start_time
+    return _bot_start_time
+
+def get_bot_start_time() -> Optional[datetime]:
+    """グローバル変数からBotの起動時刻を取得"""
+    global _bot_start_time
+    return _bot_start_time
