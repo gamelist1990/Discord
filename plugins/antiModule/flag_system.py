@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import discord
 from discord.ext import commands
 from plugins.antiModule.config import AntiCheatConfig
+from DataBase import get_guild_data, set_guild_data, update_guild_data
 
 
 class FlagSystem:
@@ -66,6 +67,25 @@ class FlagSystem:
                 base_dict[key] = value
     
     @classmethod
+    def _load_user_flags_from_db(cls, guild_id):
+        """DBから該当ギルドのユーザーフラグ情報を読み込む"""
+        data = get_guild_data(guild_id)
+        return data.get("user_flags", {})
+
+    @classmethod
+    def _save_user_flags_to_db(cls, guild_id, user_flags):
+        """DBに該当ギルドのユーザーフラグ情報を書き込む"""
+        data = get_guild_data(guild_id)
+        data["user_flags"] = user_flags
+        set_guild_data(guild_id, data)
+
+    @classmethod
+    def _ensure_user_flags_loaded(cls, guild_id):
+        """DBからメモリにロード（初回のみ）"""
+        if guild_id not in cls._user_flags:
+            cls._user_flags[guild_id] = cls._load_user_flags_from_db(guild_id)
+
+    @classmethod
     async def add_flag(cls, message: discord.Message, alert_type: str) -> bool:
         """
         ユーザーにフラグを追加し、必要に応じてアクションを実行
@@ -86,6 +106,7 @@ class FlagSystem:
         
         guild_id = message.guild.id
         user_id = message.author.id
+        cls._ensure_user_flags_loaded(guild_id)
         
         # ギルドデータを初期化
         if guild_id not in cls._user_flags:
@@ -98,7 +119,6 @@ class FlagSystem:
                 "last_decay": datetime.now().timestamp(),
                 "violations": []
             }
-        
         user_data = cls._user_flags[guild_id][user_id]
         
         # フラグの自動減衰処理
@@ -114,7 +134,8 @@ class FlagSystem:
             "channel_id": message.channel.id,
             "message_id": message.id
         })
-        
+        # DBに保存
+        cls._save_user_flags_to_db(guild_id, cls._user_flags[guild_id])
         print(f"[FlagSystem] User {user_id} in guild {guild_id}: +{flag_weight} flags ({alert_type}), total: {user_data['flags']}")
         
         # アクションを実行
@@ -226,7 +247,7 @@ class FlagSystem:
     async def get_user_flags(cls, guild: discord.Guild, user_id: int) -> Dict:
         """ユーザーのフラグ情報を取得"""
         guild_id = guild.id
-        
+        cls._ensure_user_flags_loaded(guild_id)
         if guild_id not in cls._user_flags or user_id not in cls._user_flags[guild_id]:
             return {"flags": 0, "violations": []}
         
@@ -235,6 +256,8 @@ class FlagSystem:
         
         # 減衰を適用
         await cls._apply_flag_decay(user_data, config)
+        # DBに保存（減衰反映）
+        cls._save_user_flags_to_db(guild_id, cls._user_flags[guild_id])
         
         return {
             "flags": user_data["flags"],
@@ -245,13 +268,14 @@ class FlagSystem:
     async def reset_user_flags(cls, guild: discord.Guild, user_id: int) -> bool:
         """ユーザーのフラグをリセット"""
         guild_id = guild.id
-        
+        cls._ensure_user_flags_loaded(guild_id)
         if guild_id in cls._user_flags and user_id in cls._user_flags[guild_id]:
             cls._user_flags[guild_id][user_id] = {
                 "flags": 0,
                 "last_decay": datetime.now().timestamp(),
                 "violations": []
             }
+            cls._save_user_flags_to_db(guild_id, cls._user_flags[guild_id])
             return True
         return False
     
@@ -259,7 +283,7 @@ class FlagSystem:
     async def get_top_flagged_users(cls, guild: discord.Guild, limit: int = 10) -> List[Dict]:
         """フラグの多いユーザー上位を取得"""
         guild_id = guild.id
-        
+        cls._ensure_user_flags_loaded(guild_id)
         if guild_id not in cls._user_flags:
             return []
         
@@ -277,6 +301,8 @@ class FlagSystem:
                     "violations": len(user_data["violations"])
                 })
         
+        # DBに保存（減衰反映）
+        cls._save_user_flags_to_db(guild_id, cls._user_flags[guild_id])
         # フラグ数でソート
         users_with_flags.sort(key=lambda x: x["flags"], reverse=True)
         return users_with_flags[:limit]

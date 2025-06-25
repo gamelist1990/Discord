@@ -250,20 +250,54 @@ def setup_anti_commands(bot):
         await ctx.send(f"🔄 **{valid_features[feature]}** を **{status}** に変更しました。")
 
     @anti.command()
-    async def flag(ctx, subcommand: str = ""):
-        """フラグシステムの設定画面を開く。'quick'を指定すると推奨設定を適用"""
+    async def flag(ctx, subcommand: str = "", user_id: int = 0, count: int = 0):
+        """フラグシステムの設定画面を開く。'quick'を指定すると推奨設定を適用
+        clearサブコマンド: #anti flag clear <user_id> [count]
+        """
         if not isAdmin(str(ctx.author.id), str(ctx.guild.id), config):
             await ctx.send("❌ 管理者権限が必要です。")
             return
-        
+        from plugins.antiModule.flag_commands import _quick_setup_command, FlagConfigView
+        from plugins.antiModule.flag_system import FlagSystem
         if subcommand == "quick":
-            # クイック設定コマンド
-            from plugins.antiModule.flag_commands import _quick_setup_command
             await _quick_setup_command(ctx)
             return
+        elif subcommand == "clear":
+            if not user_id:
+                await ctx.send("❌ ユーザーIDを指定してください。例: `#anti flag clear 123456789012345678` または `#anti flag clear 123456789012345678 10`")
+                return
+            member = None
+            try:
+                member = await ctx.guild.fetch_member(user_id)
+            except Exception:
+                pass
+            if not member:
+                await ctx.send(f"❌ 指定ユーザーが見つかりません: {user_id}")
+                return
+            user_flags = await FlagSystem.get_user_flags(ctx.guild, user_id)
+            before = user_flags["flags"]
+            if not count:
+                # 全クリア
+                await FlagSystem.reset_user_flags(ctx.guild, user_id)
+                await ctx.send(f"✅ <@{user_id}> のフラグを全てリセットしました。（元: {before}）")
+            else:
+                if not (1 <= count <= 100):
+                    await ctx.send("❌ 1～100の範囲で指定してください。")
+                    return
+                # 指定数だけ減算
+                new_flags = max(0, before - count)
+                # 直接書き換え
+                guild_id = ctx.guild.id
+                FlagSystem._ensure_user_flags_loaded(guild_id)
+                if user_id in FlagSystem._user_flags[guild_id]:
+                    FlagSystem._user_flags[guild_id][user_id]["flags"] = new_flags
+                    FlagSystem._save_user_flags_to_db(guild_id, FlagSystem._user_flags[guild_id])
+                    await ctx.send(f"✅ <@{user_id}> のフラグを {count} 減らしました。（{before} → {new_flags}）")
+                else:
+                    await ctx.send(f"❌ ユーザーデータが見つかりません: {user_id}")
+            return
         elif subcommand != "":
-            # 無効なサブコマンド
-            await ctx.send("❌ 無効なサブコマンドです。使用可能: `#anti flag` または `#anti flag quick`")
+            await ctx.send("❌ 無効なサブコマンドです。使用可能: `#anti flag` `#anti flag quick` `#anti flag clear <user_id> [count]`")
             return
         
         from plugins.antiModule.flag_commands import FlagConfigView
