@@ -413,10 +413,11 @@ class DeleteNotificationView(discord.ui.View):
 
         for channel_info in channels:
             channel_id = channel_info.get("channel_id", "Unknown")
+            channel_name = channel_info.get("channel_name") or channel_id
             notification_channel = channel_info.get("notification_channel", "Unknown")
             options.append(
                 discord.SelectOption(
-                    label=f"チャンネルID: {channel_id}",
+                    label=f"チャンネル名: {channel_name}",
                     description=f"通知先: #{notification_channel}",
                     value=channel_id,
                 )
@@ -450,17 +451,23 @@ class DeleteNotificationView(discord.ui.View):
 
         # 設定を削除
         channels = get_guild_value(self.guild_id, "youtube_channels", [])
+        # チャンネル名取得
+        channel_name = None
+        for ch in channels:
+            if ch.get("channel_id") == channel_id:
+                channel_name = ch.get("channel_name") or channel_id
+                break
         channels = [ch for ch in channels if ch.get("channel_id") != channel_id]
         update_guild_data(self.guild_id, "youtube_channels", channels)
 
         embed = discord.Embed(
             title="✅ 設定削除完了",
-            description=f"🗑️ **{channel_id}** の動画通知設定を削除しました。\n今後このチャンネルの通知は送信されません。",
+            description=f"🗑️ **{channel_name or channel_id}** の動画通知設定を削除しました。\n今後このチャンネルの通知は送信されません。",
             color=0xFF6347,  # トマト色
         )
         embed.add_field(
             name="🔧 削除されたチャンネル", 
-            value=f"```\n{channel_id}\n```", 
+            value=f"```\n{channel_name or channel_id}\n```", 
             inline=False
         )
         embed.set_footer(text="🗑️ YouTube通知システム | 設定削除", icon_url="https://youtube.com/favicon.ico")
