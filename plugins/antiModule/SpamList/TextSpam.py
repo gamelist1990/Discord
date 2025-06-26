@@ -7,7 +7,6 @@ from plugins.antiModule.spam import (
 )
 from plugins.antiModule.bypass import MiniAntiBypass
 from plugins.antiModule.spam import BaseSpam
-from plugins.antiModule.SpamList.webDiscordAPI import WebDiscordAPIv10, DiscordInviteInfo
 import difflib
 import re
 from collections import deque
@@ -121,10 +120,12 @@ class TextSpam(BaseSpam):
             "horion",
             "canary.discord.com",
         ]
-        block_guild_keywords = ["ozeu", "おぜう"]
-        block_inviter_ids = ["1300329093698682900", "1371278226399428608"]
 
-        url_pattern = re.compile(r"https?://[\w\-./?%&=:#@]+", re.IGNORECASE)
+        # URL検出の正規表現を強化
+        url_pattern = re.compile(
+            r"https?://(?:[\w-]+\.)+[\w-]+(?:/[\w\-./?%&=:#@]*)?",
+            re.IGNORECASE
+        )
         urls = url_pattern.findall(content)
         redirect_url_score = 0
         for url in urls:
@@ -149,35 +150,6 @@ class TextSpam(BaseSpam):
                         continue
         if redirect_url_score > 0:
             score += redirect_url_score
-        discord_invite_pattern = re.compile(
-            r"https?://(discord\.com/invite/|discord\.gg/)([\w-]+)", re.IGNORECASE
-        )
-        for url in urls:
-            m = discord_invite_pattern.match(url)
-            if m:
-                invite_code = m.group(2)
-                info = await WebDiscordAPIv10.get_invite_info(invite_code)
-                # v10 APIのエラー時はスキップ
-                if not isinstance(info, DiscordInviteInfo):
-                    continue
-                # Guild名・説明文・profile名・profile説明文のブロックワード判定
-                for block_word in block_guild_keywords:
-                    if (
-                        block_word.lower() in info.guild_name.lower()
-                        or block_word.lower() in info.guild_description.lower()
-                        or block_word.lower() in info.profile_name.lower()
-                        or block_word.lower() in info.profile_description.lower()
-                    ):
-                        redirect_url_score += 0.5  # スコアは調整可
-                        break
-                # inviterのIDブラックリスト判定
-                inviter_id = (
-                    getattr(info, "inviter", {}).get("id")
-                    if hasattr(info, "inviter")
-                    else None
-                )
-                if inviter_id and inviter_id in block_inviter_ids:
-                    redirect_url_score += 1.0  # スコアは調整可
         if score >= TEXT_SPAM_CONFIG["base_threshold"]:
             from plugins.antiModule.spam import spam_log_aggregator
 

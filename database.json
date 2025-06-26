@@ -117,7 +117,7 @@
         "channel_name": "こう君！",
         "created_at": "2025-06-23T11:56:53.500178",
         "interval": 1,
-        "last_check": "2025-06-25T22:02:08.644500+09:00",
+        "last_check": "2025-06-26T13:30:48.963048+09:00",
         "last_video_id": "NBWnybPdM08",
         "notification_channel": 1099973068941692988,
         "rss_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCue_c1nQyNwfZa2cLR4fo7g",
@@ -128,7 +128,7 @@
         "channel_name": "マグロヘッド",
         "created_at": "2025-06-23T21:11:27.386573+09:00",
         "interval": 5,
-        "last_check": "2025-06-25T21:58:05.780742+09:00",
+        "last_check": "2025-06-26T13:29:47.714166+09:00",
         "last_video_id": "Dpe_Bs0UA6I",
         "notification_channel": 1099973068941692988,
         "rss_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCjJmYy279ehSYSwR1A3fXtA",
@@ -139,13 +139,28 @@
         "channel_name": "PEXの日常",
         "created_at": "2025-06-24T14:15:11.281484+09:00",
         "interval": 5,
-        "last_check": "2025-06-25T21:58:06.547169+09:00",
+        "last_check": "2025-06-26T13:29:48.486467+09:00",
         "last_video_id": "CCRuqR7Vp5U",
         "notification_channel": 1099973068941692988,
         "rss_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UC-dL458_TAWW1d1Ydjp3D6w",
         "was_live": false
       }
-    ]
+    ],
+    "user_flags": {
+      "1371278226399428608": {
+        "flags": 3,
+        "last_decay": 1750904741.601563,
+        "violations": [
+          {
+            "channel_id": 1148749910825504888,
+            "flags_added": 3,
+            "message_id": 1387619793179377665,
+            "timestamp": 1750904741.601578,
+            "type": "mention"
+          }
+        ]
+      }
+    }
   },
   "1130057359390150676": {
     "AntiCheat": {
