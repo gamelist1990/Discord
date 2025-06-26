@@ -12,7 +12,7 @@ class AnonChatModal(discord.ui.Modal):
         self.message_input = discord.ui.TextInput(
             label="送信する内容",
             placeholder="ここに匿名で送りたい内容を入力...",
-            style=discord.TextStyle.short, 
+            style=discord.TextStyle.paragraph, 
             required=True,
             max_length=100
         )
@@ -23,6 +23,20 @@ class AnonChatModal(discord.ui.Modal):
         text = self.message_input.value.replace('\n', ' ')
         import re
         text = re.sub(r'\s{2,}', ' ', text).strip()
+        # 改行禁止
+        if '\n' in self.message_input.value or '\r' in self.message_input.value:
+            await interaction.followup.send("❌ 改行は禁止されています。", ephemeral=True)
+            return
+        # URL禁止
+        url_pattern = re.compile(r"https?://|www\\.")
+        if url_pattern.search(text):
+            await interaction.followup.send("❌ URLの送信は禁止されています。", ephemeral=True)
+            return
+        # マークダウン禁止
+        markdown_pattern = re.compile(r"[`*_~|\[\]()>#\-]|")
+        if markdown_pattern.search(text):
+            await interaction.followup.send("❌ マークダウン記号の使用は禁止されています。", ephemeral=True)
+            return
         if not text:
             await interaction.followup.send("❌ 空のメッセージは送信できません。", ephemeral=True)
             return
