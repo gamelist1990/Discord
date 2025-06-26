@@ -1,11 +1,9 @@
 # フラグシステムの設定用コマンド
 import discord
-from discord.ext import commands
 from plugins.common_ui import ModalInputView
 from plugins.antiModule.flag_system import FlagSystem
-from plugins.antiModule.types import DetectionTypeManager, DetectionType
-from typing import Dict, List, Optional
-import json
+from plugins.antiModule.types import DetectionTypeManager
+from typing import Dict, Optional
 
 
 class FlagConfigView(discord.ui.View):
