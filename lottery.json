@@ -1,0 +1,21 @@
+{
+  "guild_settings": {
+    "890315487962095637": "1119320648448213043"
+  },
+  "dshopping_switch2": {
+    "state": {
+      "stock_status_switch2_search": "在庫なし"
+    }
+  },
+  "yahoo_switch2_multi_stock": {
+    "state": {
+      "stock_status_83001": "在庫なし",
+      "stock_status_83000": "在庫なし"
+    }
+  },
+  "rakuten_switch2_lottery": {
+    "state": {
+      "stock_status_switch2_lottery": "抽選受付は終了しました。次回開催が決まりましたら当ページでご連絡します。"
+    }
+  }
+}

@@ -206,4 +206,195 @@ def get_db_timestamp(key: str):
     db = _load_db()
     return db.get(key)
 
+# --- カスタムJSONデータベース管理 ---
+custom_db_caches = {}  # {db_name: cache_data}
+custom_db_locks = {}   # {db_name: Lock()}
+
+def get_custom_db_path(db_name):
+    """カスタムデータベースのファイルパスを取得"""
+    return os.path.join(BASE_DIR, f"{db_name}.json")
+
+def get_custom_db_lock(db_name):
+    """カスタムデータベース用のロックを取得（なければ作成）"""
+    if db_name not in custom_db_locks:
+        custom_db_locks[db_name] = Lock()
+    return custom_db_locks[db_name]
+
+def load_custom_db_cache(db_name):
+    """カスタムデータベースのキャッシュを読み込み"""
+    global custom_db_caches
+    if db_name not in custom_db_caches:
+        db_file = get_custom_db_path(db_name)
+        lock = get_custom_db_lock(db_name)
+        if os.path.exists(db_file):
+            with lock, open(db_file, "r", encoding="utf-8") as f:
+                try:
+                    custom_db_caches[db_name] = json.load(f)
+                except json.JSONDecodeError:
+                    logger.warning(f"カスタムDB {db_name} のJSONが破損しています。空のDBとして初期化します。")
+                    custom_db_caches[db_name] = {}
+        else:
+            custom_db_caches[db_name] = {}
+    return custom_db_caches[db_name]
+
+def save_custom_db_cache(db_name):
+    """カスタムデータベースのキャッシュを保存"""
+    global custom_db_caches
+    if db_name in custom_db_caches:
+        db_file = get_custom_db_path(db_name)
+        lock = get_custom_db_lock(db_name)
+        with lock, open(db_file, "w", encoding="utf-8") as f:
+            json.dump(custom_db_caches[db_name], f, ensure_ascii=False, indent=2)
+
+def _load_custom_db(db_name):
+    """カスタムデータベースを読み込み"""
+    return load_custom_db_cache(db_name)
+
+def _save_custom_db(db_name, data):
+    """カスタムデータベースを保存"""
+    global custom_db_caches
+    custom_db_caches[db_name] = data
+    save_custom_db_cache(db_name)
+
+# === カスタムデータベース操作関数 ===
+
+def get_custom_data(db_name, key=None):
+    """カスタムデータベースからデータを取得"""
+    db = _load_custom_db(db_name)
+    if key is None:
+        return db
+    return db.get(str(key), {})
+
+def set_custom_data(db_name, key, value):
+    """カスタムデータベースにデータを保存"""
+    db = _load_custom_db(db_name)
+    db[str(key)] = value
+    _save_custom_db(db_name, db)
+
+def update_custom_data(db_name, key, sub_key, value):
+    """カスタムデータベースの特定のキーの中のサブキーを更新"""
+    db = _load_custom_db(db_name)
+    data = db.setdefault(str(key), {})
+    data[sub_key] = value
+    _save_custom_db(db_name, db)
+
+def get_custom_value(db_name, key, sub_key=None, default=None):
+    """カスタムデータベースから特定の値を取得"""
+    data = get_custom_data(db_name, key)
+    if sub_key is None:
+        return data if data else default
+    return data.get(sub_key, default)
+
+def delete_custom_data(db_name, key):
+    """カスタムデータベースから特定のキーのデータを削除"""
+    db = _load_custom_db(db_name)
+    if str(key) in db:
+        del db[str(key)]
+        _save_custom_db(db_name, db)
+
+def get_all_custom_keys(db_name):
+    """カスタムデータベースの全てのキーを取得"""
+    db = _load_custom_db(db_name)
+    return list(db.keys())
+
+def has_custom_data(db_name, key):
+    """カスタムデータベースに指定のキーが存在するかチェック"""
+    db = _load_custom_db(db_name)
+    return str(key) in db
+
+def clear_custom_db(db_name):
+    """カスタムデータベースを全て削除"""
+    _save_custom_db(db_name, {})
+
+def delete_custom_db(db_name):
+    """カスタムデータベースファイルを削除"""
+    global custom_db_caches, custom_db_locks
+    
+    # キャッシュから削除
+    if db_name in custom_db_caches:
+        del custom_db_caches[db_name]
+    
+    # ロックオブジェクトを削除
+    if db_name in custom_db_locks:
+        del custom_db_locks[db_name]
+    
+    # ファイルを削除
+    db_file = get_custom_db_path(db_name)
+    if os.path.exists(db_file):
+        os.remove(db_file)
+
+def list_custom_databases():
+    """存在するカスタムデータベース一覧を取得"""
+    databases = []
+    for file in os.listdir(BASE_DIR):
+        if file.endswith('.json') and file != 'database.json' and file != 'database.json.bak':
+            db_name = file[:-5]  # .jsonを除去
+            databases.append(db_name)
+    return databases
+
+
+
+# === カスタムデータベースのバックアップ機能 ===
+
+def backup_custom_db(db_name):
+    """カスタムデータベースのバックアップを作成"""
+    db_file = get_custom_db_path(db_name)
+    backup_file = f"{db_file}.bak"
+    
+    if os.path.exists(db_file):
+        import shutil
+        shutil.copy2(db_file, backup_file)
+        logger.info(f"カスタムDB {db_name} のバックアップを作成しました: {backup_file}")
+
+def restore_custom_db_from_backup(db_name):
+    """カスタムデータベースをバックアップから復元"""
+    db_file = get_custom_db_path(db_name)
+    backup_file = f"{db_file}.bak"
+    
+    if os.path.exists(backup_file):
+        import shutil
+        shutil.copy2(backup_file, db_file)
+        
+        # キャッシュを再読み込み
+        global custom_db_caches
+        if db_name in custom_db_caches:
+            del custom_db_caches[db_name]
+        load_custom_db_cache(db_name)
+        
+        logger.info(f"カスタムDB {db_name} をバックアップから復元しました")
+        return True
+    else:
+        logger.warning(f"カスタムDB {db_name} のバックアップファイルが見つかりません")
+        return False
+
+# === カスタムデータベースの統計情報 ===
+
+def get_custom_db_stats(db_name):
+    """カスタムデータベースの統計情報を取得"""
+    db = _load_custom_db(db_name)
+    db_file = get_custom_db_path(db_name)
+    
+    stats = {
+        "name": db_name,
+        "keys_count": len(db),
+        "file_exists": os.path.exists(db_file),
+        "file_size": 0,
+        "last_modified": None
+    }
+    
+    if stats["file_exists"]:
+        file_stat = os.stat(db_file)
+        stats["file_size"] = file_stat.st_size
+        stats["last_modified"] = datetime.fromtimestamp(file_stat.st_mtime).isoformat()
+    
+    return stats
+
+def get_all_custom_db_stats():
+    """全てのカスタムデータベースの統計情報を取得"""
+    databases = list_custom_databases()
+    stats = {}
+    for db_name in databases:
+        stats[db_name] = get_custom_db_stats(db_name)
+    return stats
+
 
