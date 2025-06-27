@@ -9,7 +9,7 @@ from typing import Optional
 
 def setup(bot):
     async def check_callback(interaction: discord.Interaction, user: Optional[discord.Member] = None):
-        """ユーザーの現在のフラグ数と次のアクションを表示"""
+        """ユーザーの現在のフラグ数と次のアクションを表示（シンプル版）"""
         if not interaction.guild:
             await interaction.response.send_message("❌ このコマンドはサーバー内でのみ使用できます。", ephemeral=True)
             return
@@ -25,7 +25,6 @@ def setup(bot):
             
             # フラグシステムの設定を取得
             config = await FlagSystem.get_flag_config(interaction.guild)
-            decay_hours = config.get("decay_hours", 24)
             
             # フラグシステムが無効の場合
             if not config.get("enabled", True):
@@ -50,97 +49,64 @@ def setup(bot):
             # ユーザーのアバターを設定
             embed.set_thumbnail(url=target_user.display_avatar.url)
             
-            # 現在の状況を上部に表示
-            status_emoji = _get_status_emoji(current_flags, next_action_info)
-            embed.add_field(
-                name=f"{status_emoji} 現在の状況",
-                value=_get_status_description(current_flags, next_action_info),
-                inline=False
-            )
-            
-            # プログレスバーと基本情報
+            # プログレスバー表示
             progress_bar = _create_flag_progress_bar(current_flags, next_action_info)
             embed.add_field(
-                name="🚩 フラグ進捗",
+                name="🚩 フラグ状況",
                 value=progress_bar,
                 inline=False
             )
             
-            # フラグ詳細情報を左側に配置
-            flag_info_text = f"📋 **{len(violations)}** 件の違反履歴\n"
-            flag_info_text += f"⏰ {decay_hours}時間ごとにフラグ-1"
+            # 基本情報のみ（シンプル版）
+            basic_info = f"📋 **違反件数:** {len(violations)}件\n"
+            basic_info += f"🚩 **現在フラグ:** {current_flags}個"
             
-            embed.add_field(
-                name="📈 詳細情報",
-                value=flag_info_text,
-                inline=True
-            )
-            
-            # 次のアクション情報を右側に配置
             if next_action_info:
+                flags_needed = next_action_info["flag_count"] - current_flags
                 action_types = {
                     "timeout": "⏱️ タイムアウト",
-                    "kick": "👢 キック",
+                    "kick": "👢 キック", 
                     "ban": "🔨 BAN"
                 }
                 action_name = action_types.get(next_action_info["action"], next_action_info["action"])
-                flags_needed = next_action_info["flag_count"] - current_flags
                 
                 if flags_needed <= 0:
-                    next_action_text = f"⚠️ **{action_name}**\n"
-                    next_action_text += "閾値に達しています！\n"
-                    next_action_text += "次の違反で実行される可能性があります"
+                    basic_info += f"\n⚠️ **次のアクション:** {action_name} (即実行可能)"
                 else:
-                    duration_text = ""
-                    if next_action_info["action"] == "timeout":
-                        duration = next_action_info.get("duration", 0)
-                        if duration >= 86400:
-                            duration_text = f" ({duration//86400}日間)"
-                        elif duration >= 3600:
-                            duration_text = f" ({duration//3600}時間)"
-                        elif duration >= 60:
-                            duration_text = f" ({duration//60}分間)"
-                        else:
-                            duration_text = f" ({duration}秒間)"
-                    
-                    next_action_text = f"🎯 **{action_name}{duration_text}**\n"
-                    next_action_text += f"あと **{flags_needed}** フラグで実行"
-                
-                embed.add_field(
-                    name="⚡ 次のアクション",
-                    value=next_action_text,
-                    inline=True
-                )
+                    basic_info += f"\n⚡ **次のアクション:** {action_name} (あと{flags_needed}フラグ)"
             else:
-                embed.add_field(
-                    name="✅ 次のアクション",
-                    value="設定されたアクションは\nありません",
-                    inline=True
-                )
+                basic_info += "\n✅ **処罰設定:** なし"
             
-            # 最近の違反履歴（改善されたデザイン）
+            embed.add_field(
+                name="📊 基本情報",
+                value=basic_info,
+                inline=True
+            )
+            
+            # 最新違反のみ表示（シンプル版）
             if violations:
-                recent_violations = violations[-3:]  # 最新3件
-                violation_text = []
-                for i, violation in enumerate(recent_violations, 1):
-                    from datetime import datetime
-                    dt = datetime.fromtimestamp(violation["timestamp"])
-                    timestamp = discord.utils.format_dt(dt, style="R")
-                    
-                    type_name = DetectionTypeManager.get_display_name(violation["type"])
-                    type_emoji = DetectionTypeManager.get_emoji(violation["type"])
-                    violation_text.append(f"{type_emoji} {type_name} **+{violation['flags_added']}** {timestamp}")
+                recent_violation = violations[-1]
+                from datetime import datetime
+                dt = datetime.fromtimestamp(recent_violation["timestamp"])
+                timestamp = discord.utils.format_dt(dt, style="R")
+                
+                type_name = DetectionTypeManager.get_display_name(recent_violation["type"])
+                type_emoji = DetectionTypeManager.get_emoji(recent_violation["type"])
+                
+                last_violation_info = f"{type_emoji} **{type_name}**\n"
+                last_violation_info += f"⏰ {timestamp}\n"
+                last_violation_info += f"🚩 +{recent_violation['flags_added']}フラグ"
                 
                 embed.add_field(
-                    name="📜 最近の違反履歴",
-                    value="\n".join(violation_text),
-                    inline=False
+                    name="📜 最新違反",
+                    value=last_violation_info,
+                    inline=True
                 )
             else:
                 embed.add_field(
                     name="✅ 違反履歴",
-                    value="違反はありません。優良ユーザーです！",
-                    inline=False
+                    value="🌟 **違反なし**\n優良ユーザーです！",
+                    inline=True
                 )
             
             # フッター情報を追加（日本時間で表示）
@@ -150,7 +116,7 @@ def setup(bot):
             time_str = current_time.strftime("%Y年%m月%d日 %H:%M:%S")
             
             embed.set_footer(
-                text=f"実行時刻: {time_str} (JST) | サーバー: {interaction.guild.name}",
+                text=f"実行時刻: {time_str} (JST)",
                 icon_url=interaction.guild.icon.url if interaction.guild.icon else None
             )
             
@@ -185,15 +151,15 @@ def setup(bot):
 
 
 def _create_flag_progress_bar(current_flags: int, next_action_info: Optional[dict], length: int = 15) -> str:
-    """フラグのプログレスバーを作成"""
+    """シンプルなフラグプログレスバーを作成"""
     if not next_action_info:
-        return "```\n━━━━━━━━━━━━━━━ 制限なし\n```"
+        return "```\n🟢 制限なし\n```"
     
     target_flags = next_action_info["flag_count"]
     if target_flags <= 0:
-        return "```\n━━━━━━━━━━━━━━━ 設定エラー\n```"
+        return "```\n❌ 設定エラー\n```"
     
-    # プログレスの計算（100%を超える場合もある）
+    # プログレスの計算
     progress = min(current_flags / target_flags, 1.0)
     filled_length = int(length * progress)
     
@@ -217,30 +183,6 @@ def _create_flag_progress_bar(current_flags: int, next_action_info: Optional[dic
         status = "🟢 SAFE"
     
     return f"```\n{bar} {percentage:3d}%\n```{status} ({current_flags}/{target_flags})"
-
-
-def _get_status_emoji(current_flags: int, next_action_info: Optional[dict]) -> str:
-    """現在の状況に応じた絵文字を取得"""
-    if current_flags == 0:
-        return "🟢"  # 安全
-    elif next_action_info and current_flags >= next_action_info["flag_count"]:
-        return "🔴"  # 危険
-    elif next_action_info and (next_action_info["flag_count"] - current_flags) <= 2:
-        return "🟠"  # 警告
-    else:
-        return "🔵"  # 注意
-
-
-def _get_status_description(current_flags: int, next_action_info: Optional[dict]) -> str:
-    """現在の状況に応じた説明を取得"""
-    if current_flags == 0:
-        return "**安全な状態です** ✨\n違反はありません"
-    elif next_action_info and current_flags >= next_action_info["flag_count"]:
-        return "**危険な状態です** ⚠️\n次の違反でアクションが実行される可能性があります"
-    elif next_action_info and (next_action_info["flag_count"] - current_flags) <= 2:
-        return "**警告状態です** 🚨\nもう少しでアクションが実行されます"
-    else:
-        return "**注意が必要です** ⚡\nフラグが蓄積されています"
 
 
 def _get_next_action_info(current_flags: int, actions: list) -> Optional[dict]:

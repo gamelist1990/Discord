@@ -117,7 +117,7 @@
         "channel_name": "こう君！",
         "created_at": "2025-06-26T14:07:52.839578+09:00",
         "interval": 1,
-        "last_check": "2025-06-27T15:19:39.399779+09:00",
+        "last_check": "2025-06-27T15:46:50.880218+09:00",
         "last_live_status": "none",
         "last_live_video_id": "NhyXnXAaFpI",
         "last_video_id": "NhyXnXAaFpI",
@@ -141,8 +141,8 @@
         ]
       },
       "1386167352747622521": {
-        "flags": 3,
-        "last_decay": 1750923276.115996,
+        "flags": 5,
+        "last_decay": 1751006238.802845,
         "violations": [
           {
             "channel_id": 1296388012552355852,
@@ -164,6 +164,13 @@
             "message_id": 1387700157491056720,
             "timestamp": 1750923902.197386,
             "type": "text"
+          },
+          {
+            "type": "image",
+            "timestamp": 1751006238.802845,
+            "flags_added": 2,
+            "channel_id": 1296388012552355852,
+            "message_id": 1388045493275463781
           }
         ]
       }

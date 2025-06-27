@@ -74,9 +74,33 @@ class FlagSystem:
 
     @classmethod
     def _save_user_flags_to_db(cls, guild_id, user_flags):
-        """DBに該当ギルドのユーザーフラグ情報を書き込む"""
+        """DBに該当ギルドのユーザーフラグ情報を書き込む（既存データとマージ）"""
         data = get_guild_data(guild_id)
-        data["user_flags"] = user_flags
+        existing_flags = data.get("user_flags", {})
+        # ユーザーごとにマージ
+        merged_flags = existing_flags.copy()
+        for user_id, new_flag in user_flags.items():
+            if user_id in merged_flags and isinstance(merged_flags[user_id], dict) and isinstance(new_flag, dict):
+                # violationsリストは結合し重複を除去
+                old_violations = merged_flags[user_id].get("violations", [])
+                new_violations = new_flag.get("violations", [])
+                # message_idで重複除去
+                seen = set()
+                merged_violations = []
+                for v in old_violations + new_violations:
+                    mid = v.get("message_id")
+                    if mid is None or mid not in seen:
+                        merged_violations.append(v)
+                        if mid is not None:
+                            seen.add(mid)
+                merged_flags[user_id] = {
+                    **merged_flags[user_id],
+                    **new_flag,
+                    "violations": merged_violations
+                }
+            else:
+                merged_flags[user_id] = new_flag
+        data["user_flags"] = merged_flags
         set_guild_data(guild_id, data)
 
     @classmethod
