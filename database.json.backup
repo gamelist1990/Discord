@@ -36,7 +36,7 @@
           "mention": 3,
           "token": 5,
           "timebase": 2,
-          "typing_bypass": 3,
+          "typing_bypass": 1,
           "forward": 2
         },
         "actions": [
@@ -115,28 +115,41 @@
       {
         "channel_id": "UCue_c1nQyNwfZa2cLR4fo7g",
         "channel_name": "こう君！",
-        "rss_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCue_c1nQyNwfZa2cLR4fo7g",
-        "notification_channel": 1119320648448213043,
-        "interval": 1,
-        "last_video_id": "NhyXnXAaFpI",
-        "was_live": false,
         "created_at": "2025-06-26T14:07:52.839578+09:00",
-        "last_check": "2025-06-27T14:32:11.739154+09:00",
+        "interval": 1,
+        "last_check": "2025-06-27T15:44:53.202437+09:00",
         "last_live_status": "none",
-        "last_live_video_id": "NhyXnXAaFpI"
+        "last_live_video_id": "NhyXnXAaFpI",
+        "last_video_id": "NhyXnXAaFpI",
+        "notification_channel": 1119320648448213043,
+        "rss_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCue_c1nQyNwfZa2cLR4fo7g",
+        "was_live": false
       }
     ],
     "user_flags": {
       "1371278226399428608": {
-        "flags": 3,
-        "last_decay": 1750904741.601563,
+        "flags": 1,
+        "last_decay": 1750932152.819268,
         "violations": [
           {
-            "channel_id": 1148749910825504888,
-            "flags_added": 3,
-            "message_id": 1387619793179377665,
-            "timestamp": 1750904741.601578,
-            "type": "mention"
+            "channel_id": 1296388012552355852,
+            "flags_added": 1,
+            "message_id": 1387734763217092659,
+            "timestamp": 1750932152.819283,
+            "type": "text"
+          }
+        ]
+      },
+      "1386167352747622521": {
+        "flags": 2,
+        "last_decay": 1751006238.802845,
+        "violations": [
+          {
+            "type": "image",
+            "timestamp": 1751006238.802845,
+            "flags_added": 2,
+            "channel_id": 1296388012552355852,
+            "message_id": 1388045493275463781
           }
         ]
       }
