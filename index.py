@@ -21,7 +21,8 @@ from functools import wraps
 from discord import app_commands
 from typing import Any, Callable
 import traceback
-import atexit
+import base64
+import requests
 
 from DataBase import start_api_key_cleanup_loop
 import utils
@@ -623,6 +624,9 @@ def main():
             loop.create_task(bot.close())
         except Exception as e:
             print(f"❌ 終了処理エラー: {e}")
+        
+        # データベースをプッシュしてから終了
+        run_push()
         sys.exit(0)
 
     signal.signal(signal.SIGINT, handle_exit)
@@ -645,35 +649,105 @@ if "--render" in sys.argv:
     RUN_PUSH_ON_EXIT = True
     print("[INFO] --render指定: 終了時にpush_only.pyを自動実行します")
 
-# push_only.py実行関数
+# GitHub API push機能（旧push_only.pyの内容を統合）
 push_executed = False
-def run_push_only():
+def run_push():
+    """GitHub APIを使用してdatabase.jsonをプッシュする"""
     global push_executed
     if RUN_PUSH_ON_EXIT and not push_executed:
         push_executed = True
         try:
-            import subprocess
-            print("[INFO] push_only.py を自動実行します...")
-            subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), "push_only.py")], check=True)
+            print("[INFO] database.jsonをGitHubにプッシュ中...")
+            
+            # 環境変数とコンフィグ
+            GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+            REPO = "gamelist1990/Discord"
+            FILE_PATH = "database.json"
+            BRANCH = "main"
+            COMMIT_MESSAGE = f"auto: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} WebAPIでdatabase.jsonを更新"
+            
+            if not GITHUB_TOKEN:
+                print("[ERROR] GITHUB_TOKEN環境変数が必要です。")
+                return
+            
+            # ファイルの存在確認
+            if not os.path.exists(FILE_PATH):
+                print(f"[ERROR] ファイル '{FILE_PATH}' が見つかりません。")
+                return
+                
+            print(f"[INFO] ファイル '{FILE_PATH}' をbase64エンコード中...")
+            # ファイル内容をbase64エンコード
+            with open(FILE_PATH, "rb") as f:
+                content = base64.b64encode(f.read()).decode()
+            print(f"[INFO] エンコード完了。データ長: {len(content)} 文字")
+            
+            headers = {
+                "Authorization": f"token {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github+json"
+            }
+            
+            print(f"[INFO] 現在のファイルSHAを取得中... (branch: {BRANCH})")
+            # 現在のファイルSHAを取得
+            r = requests.get(
+                f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}?ref={BRANCH}",
+                headers=headers
+            )
+            print(f"[DEBUG] GET /contents レスポンス: {r.status_code} {r.text[:200]}")
+            
+            if r.status_code == 200:
+                response_data = r.json()
+                sha = response_data["sha"]
+                current_content = response_data["content"]
+                print(f"[INFO] 取得したSHA: {sha}")
+                print(f"[INFO] 現在のGitHubファイル内容を取得完了")
+            elif r.status_code == 404:
+                print(f"[INFO] ファイルがGitHub上に存在しません。新規作成します。")
+                sha = None
+                current_content = None
+            else:
+                print(f"[ERROR] GitHub APIからファイル情報の取得に失敗: {r.status_code} - {r.text}")
+                return
+            
+            # 内容の比較
+            if current_content is not None:
+                print(f"[INFO] ローカルファイルとGitHubファイルの内容を比較中...")
+                # GitHubから取得した内容は改行文字が含まれている可能性があるため、それを除去して比較
+                github_content_cleaned = current_content.replace('\n', '')
+                if content == github_content_cleaned:
+                    print(f"[INFO] ファイル内容に変更がありません。更新をスキップします。")
+                    print("✔ ファイル内容は最新の状態です")
+                    return
+                else:
+                    print(f"[INFO] ファイル内容に変更が検出されました。更新を続行します。")
+            else:
+                print(f"[INFO] 新規ファイルのため、内容比較をスキップして作成を続行します。")
+            
+            # ファイルを更新
+            print(f"[INFO] ファイルを更新中... (commit message: '{COMMIT_MESSAGE}')")
+            data = {
+                "message": COMMIT_MESSAGE,
+                "content": content,
+                "branch": BRANCH
+            }
+            # 既存ファイルの場合のみSHAを追加
+            if sha is not None:
+                data["sha"] = sha
+            r = requests.put(
+                f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}",
+                headers=headers,
+                json=data
+            )
+            print(f"[DEBUG] PUT /contents レスポンス: {r.status_code} {r.text[:200]}")
+            if r.status_code in (200, 201):
+                print("✔ WebAPIでdatabase.jsonを更新しました")
+            else:
+                print(f"❌ エラー: {r.text}")
+                
         except Exception as e:
-            print(f"[ERROR] push_only.py 実行失敗: {e}")
-
-# atexitで登録
-atexit.register(run_push_only)
-
-# signal(SIGINT/SIGTERM)でも確実にpush_only.pyを実行
-import signal as _signal
-
-def _handle_exit_with_push(signum, frame):
-    print(f"\n[INFO] シグナル({signum})受信。push_only.pyを実行して終了します...")
-    run_push_only()
-    sys.exit(0)
-
-_signal.signal(_signal.SIGINT, _handle_exit_with_push)
-_signal.signal(_signal.SIGTERM, _handle_exit_with_push)
+            print(f"[ERROR] database.jsonプッシュ失敗: {e}")
 
 if __name__ == "__main__":
     try:
         main()
     finally:
-        run_push_only()
+        run_push()
