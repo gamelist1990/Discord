@@ -955,61 +955,75 @@ class NotificationModeView(discord.ui.View):
     async def select_callback(self, interaction: discord.Interaction):
         if debug:
             print(f"[DEBUG] NotificationModeView select_callback: user={interaction.user.id}, value={self.select.values[0]}")
-        
-        if self.select.values[0] == "none":
-            await interaction.response.send_message(
-                "❌ 設定可能なチャンネルがありません。", 
-                ephemeral=True
-            )
-            return
+        try:
+            if self.select.values[0] == "none":
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "❌ 設定可能なチャンネルがありません。", 
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.followup.send(
+                        "❌ 設定可能なチャンネルがありません。", 
+                        ephemeral=True
+                    )
+                return
 
-        channel_id = self.select.values[0]
-        channels = get_guild_value(self.guild_id, "youtube_channels", [])
-        
-        channel_info = None
-        for ch in channels:
-            if ch.get("channel_id") == channel_id:
-                channel_info = ch
-                break
-        
-        if not channel_info:
-            await interaction.response.send_message(
-                "❌ チャンネル情報が見つかりません。", 
-                ephemeral=True
-            )
-            return
+            channel_id = self.select.values[0]
+            channels = get_guild_value(self.guild_id, "youtube_channels", [])
+            channel_info = None
+            for ch in channels:
+                if ch.get("channel_id") == channel_id:
+                    channel_info = ch
+                    break
+            if not channel_info:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "❌ チャンネル情報が見つかりません。", 
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.followup.send(
+                        "❌ チャンネル情報が見つかりません。", 
+                        ephemeral=True
+                    )
+                return
 
-        # 通知モード選択画面を表示
-        view = NotificationModeChoiceView(self.guild_id, channel_id, channel_info)
-        
-        current_mode = channel_info.get("notification_mode", "embed")
-        mode_text = "Embedモード（詳細）" if current_mode == "embed" else "URLモード（軽量）"
-        
-        embed = discord.Embed(
-            title="⚙️ 通知モードを選択",
-            description=f"📺 **{channel_info.get('channel_name', channel_id)}** の通知モードを選択してください。",
-            color=0x1E90FF
-        )
-        
-        embed.add_field(
-            name="� 現在の設定",
-            value=f"**通知モード**: {mode_text}",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="� モード説明",
-            value=(
-                "**📝 Embedモード**: リッチな埋め込み形式で詳細情報を表示\n"
-                "**🔗 URLモード**: 動画URLのみを送信（軽量・シンプル）\n"
-                "**👥 ロールメンション**: URLモードではロールメンション可能"
-            ),
-            inline=False
-        )
-        
-        embed.set_footer(text="⚙️ YouTube通知モード設定", icon_url="https://youtube.com/favicon.ico")
-        
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            # 通知モード選択画面を表示
+            view = NotificationModeChoiceView(self.guild_id, channel_id, channel_info)
+            current_mode = channel_info.get("notification_mode", "embed")
+            mode_text = "Embedモード（詳細）" if current_mode == "embed" else "URLモード（軽量）"
+            embed = discord.Embed(
+                title="⚙️ 通知モードを選択",
+                description=f"📺 **{channel_info.get('channel_name', channel_id)}** の通知モードを選択してください。",
+                color=0x1E90FF
+            )
+            embed.add_field(
+                name="� 現在の設定",
+                value=f"**通知モード**: {mode_text}",
+                inline=False
+            )
+            embed.add_field(
+                name="� モード説明",
+                value=(
+                    "**📝 Embedモード**: リッチな埋め込み形式で詳細情報を表示\n"
+                    "**🔗 URLモード**: 動画URLのみを送信（軽量・シンプル）\n"
+                    "**👥 ロールメンション**: URLモードではロールメンション可能"
+                ),
+                inline=False
+            )
+            embed.set_footer(text="⚙️ YouTube通知モード設定", icon_url="https://youtube.com/favicon.ico")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            else:
+                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        except Exception as e:
+            if debug:
+                print(f"[DEBUG] select_callback error: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"❌ エラーが発生しました: {e}", ephemeral=True)
+            else:
+                await interaction.followup.send(f"❌ エラーが発生しました: {e}", ephemeral=True)
 
 
 class NotificationModeChoiceView(discord.ui.View):
@@ -1033,83 +1047,90 @@ class NotificationModeChoiceView(discord.ui.View):
     async def url_mode(self, interaction: discord.Interaction, button: discord.ui.Button):
         if debug:
             print(f"[DEBUG] url_mode button clicked by user={interaction.user.id}")
-        
-        # URLモードの場合、ロールメンション設定画面を表示
-        view = RoleMentionView(self.guild_id, self.channel_id, self.channel_info)
-        
-        embed = discord.Embed(
-            title="� ロールメンション設定",
-            description=f"📺 **{self.channel_info.get('channel_name', self.channel_id)}** のURLモード通知でロールメンションを設定できます。",
-            color=0x32CD32
-        )
-        
-        current_role = self.channel_info.get("role_mention", "")
-        if current_role:
+        try:
+            view = RoleMentionView(self.guild_id, self.channel_id, self.channel_info)
+            embed = discord.Embed(
+                title="� ロールメンション設定",
+                description=f"📺 **{self.channel_info.get('channel_name', self.channel_id)}** のURLモード通知でロールメンションを設定できます。",
+                color=0x32CD32
+            )
+            current_role = self.channel_info.get("role_mention", "")
+            if current_role:
+                embed.add_field(
+                    name="📝 現在の設定",
+                    value=f"**ロールメンション**: <@&{current_role}>",
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="� 現在の設定",
+                    value="**ロールメンション**: なし",
+                    inline=False
+                )
             embed.add_field(
-                name="📝 現在の設定",
-                value=f"**ロールメンション**: <@&{current_role}>",
+                name="💡 使用方法",
+                value="ロールIDを入力するか、「なし」ボタンでメンションを無効化できます。",
                 inline=False
             )
-        else:
-            embed.add_field(
-                name="� 現在の設定",
-                value="**ロールメンション**: なし",
-                inline=False
-            )
-        
-        embed.add_field(
-            name="💡 使用方法",
-            value="ロールIDを入力するか、「なし」ボタンでメンションを無効化できます。",
-            inline=False
-        )
-        
-        embed.set_footer(text="� ロールメンション設定", icon_url="https://youtube.com/favicon.ico")
-        
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            embed.set_footer(text="� ロールメンション設定", icon_url="https://youtube.com/favicon.ico")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            else:
+                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        except Exception as e:
+            if debug:
+                print(f"[DEBUG] url_mode error: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"❌ エラーが発生しました: {e}", ephemeral=True)
+            else:
+                await interaction.followup.send(f"❌ エラーが発生しました: {e}", ephemeral=True)
 
     async def save_notification_mode(self, mode, interaction):
         """通知モードを保存"""
         if debug:
             print(f"[DEBUG] save_notification_mode: guild={self.guild_id}, channel={self.channel_id}, mode={mode}")
-        
-        channels = get_guild_value(self.guild_id, "youtube_channels", [])
-        for i, ch in enumerate(channels):
-            if ch.get("channel_id") == self.channel_id:
-                ch["notification_mode"] = mode
-                # Embedモードの場合はロールメンションを削除
-                if mode == "embed" and "role_mention" in ch:
-                    del ch["role_mention"]
-                channels[i] = ch
-                break
-        
-        update_guild_data(self.guild_id, "youtube_channels", channels)
-        
-        mode_text = "Embedモード（詳細）" if mode == "embed" else "URLモード（軽量）"
-        
-        embed = discord.Embed(
-            title="✅ 通知モードを保存しました",
-            description=f"📺 **{self.channel_info.get('channel_name', self.channel_id)}** の通知モードを **{mode_text}** に設定しました。",
-            color=0x32CD32
-        )
-        
-        if mode == "embed":
-            embed.add_field(
-                name="📝 Embedモード特徴",
-                value="リッチな埋め込み形式で動画情報、サムネイル、詳細データを表示します。",
-                inline=False
+        try:
+            channels = get_guild_value(self.guild_id, "youtube_channels", [])
+            for i, ch in enumerate(channels):
+                if ch.get("channel_id") == self.channel_id:
+                    ch["notification_mode"] = mode
+                    # Embedモードの場合はロールメンションを削除
+                    if mode == "embed" and "role_mention" in ch:
+                        del ch["role_mention"]
+                    channels[i] = ch
+                    break
+            update_guild_data(self.guild_id, "youtube_channels", channels)
+            mode_text = "Embedモード（詳細）" if mode == "embed" else "URLモード（軽量）"
+            embed = discord.Embed(
+                title="✅ 通知モードを保存しました",
+                description=f"📺 **{self.channel_info.get('channel_name', self.channel_id)}** の通知モードを **{mode_text}** に設定しました。",
+                color=0x32CD32
             )
-        else:
-            embed.add_field(
-                name="🔗 URLモード特徴", 
-                value="動画URLのみを送信する軽量形式です。必要に応じてロールメンションも設定できます。",
-                inline=False
-            )
-        
-        embed.set_footer(text="⚙️ 通知モード設定完了", icon_url="https://youtube.com/favicon.ico")
-        
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-
+            if mode == "embed":
+                embed.add_field(
+                    name="📝 Embedモード特徴",
+                    value="リッチな埋め込み形式で動画情報、サムネイル、詳細データを表示します。",
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="🔗 URLモード特徴", 
+                    value="動画URLのみを送信する軽量形式です。必要に応じてロールメンションも設定できます。",
+                    inline=False
+                )
+            embed.set_footer(text="⚙️ 通知モード設定完了", icon_url="https://youtube.com/favicon.ico")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+            else:
+                await interaction.followup.send(embed=embed, ephemeral=True)
+        except Exception as e:
+            if debug:
+                print(f"[DEBUG] save_notification_mode error: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"❌ エラーが発生しました: {e}", ephemeral=True)
+            else:
+                await interaction.followup.send(f"❌ エラーが発生しました: {e}", ephemeral=True)
+# ...existing code...
 class RoleMentionView(discord.ui.View):
     """ロールメンション設定画面"""
     def __init__(self, guild_id, channel_id, channel_info):
