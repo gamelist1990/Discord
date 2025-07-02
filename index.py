@@ -21,6 +21,7 @@ from functools import wraps
 from discord import app_commands
 from typing import Any, Callable
 import traceback
+import atexit
 
 from DataBase import start_api_key_cleanup_loop
 import utils
@@ -638,5 +639,41 @@ def isCommand(cmd_name):
     return False
 
 
+# push_only.py自動実行フラグ
+RUN_PUSH_ON_EXIT = False
+if "--render" in sys.argv:
+    RUN_PUSH_ON_EXIT = True
+    print("[INFO] --render指定: 終了時にpush_only.pyを自動実行します")
+
+# push_only.py実行関数
+push_executed = False
+def run_push_only():
+    global push_executed
+    if RUN_PUSH_ON_EXIT and not push_executed:
+        push_executed = True
+        try:
+            import subprocess
+            print("[INFO] push_only.py を自動実行します...")
+            subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), "push_only.py")], check=True)
+        except Exception as e:
+            print(f"[ERROR] push_only.py 実行失敗: {e}")
+
+# atexitで登録
+atexit.register(run_push_only)
+
+# signal(SIGINT/SIGTERM)でも確実にpush_only.pyを実行
+import signal as _signal
+
+def _handle_exit_with_push(signum, frame):
+    print(f"\n[INFO] シグナル({signum})受信。push_only.pyを実行して終了します...")
+    run_push_only()
+    sys.exit(0)
+
+_signal.signal(_signal.SIGINT, _handle_exit_with_push)
+_signal.signal(_signal.SIGTERM, _handle_exit_with_push)
+
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    finally:
+        run_push_only()
