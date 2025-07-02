@@ -403,15 +403,14 @@ class VideoNotificationView(discord.ui.View):
                 mode_text = "🔗 URLモード（軽量）"
                 mode_emoji = "🔗"
             else:
-                mode_text = "� Embedモード（詳細）"
+                mode_text = "📝 Embedモード（詳細）"
                 mode_emoji = "📝"
-            
             # ロールメンション設定状況
             role_mention = channel_info.get("role_mention", "")
             if role_mention:
-                role_text = f"� ロールメンション: <@&{role_mention}>"
+                role_text = f"👥 ロールメンション: <@&{role_mention}>"
             else:
-                role_text = "� ロールメンション: なし"
+                role_text = "👥 ロールメンション: なし"
               # 次回更新予定時刻
             last_check = channel_info.get("last_check")
             interval = channel_info.get("interval", 30)
@@ -891,7 +890,7 @@ async def info(ctx):
         value="```\n"
         "📝 Embedモード：詳細表示\n"
         "🔗 URLモード：軽量・シンプル\n"
-        "� ロールメンション対応\n"
+        "👥 ロールメンション対応\n"
         "🛡️ レート制限対策完備\n"
         "```",
         inline=True,
@@ -903,7 +902,7 @@ async def info(ctx):
         "⚡ コード大幅削減\n"
         "🔗 URLモード：最小負荷\n"
         "📝 Embedモード：リッチ表示\n"
-        "� 高速処理・安定動作\n"
+        "🚀 高速処理・安定動作\n"
         "```",
         inline=True,
     )
@@ -946,13 +945,13 @@ class NotificationModeView(discord.ui.View):
             # 現在の通知モード
             current_mode = channel_info.get("notification_mode", "embed")
             mode_text = "Embed" if current_mode == "embed" else "URL"
-            
+            emoji = "📝" if current_mode == "embed" else "🔗"
             options.append(
                 discord.SelectOption(
                     label=f"{channel_name[:45]}{'...' if len(channel_name) > 45 else ''}",
                     description=f"現在: {mode_text}モード | 通知先: #{notification_channel}",
                     value=channel_id,
-                    emoji="�"
+                    emoji=emoji
                 )
             )
 
@@ -1020,12 +1019,12 @@ class NotificationModeView(discord.ui.View):
                 color=0x1E90FF
             )
             embed.add_field(
-                name="� 現在の設定",
+                name="📝 現在の設定",
                 value=f"**通知モード**: {mode_text}",
                 inline=False
             )
             embed.add_field(
-                name="� モード説明",
+                name="💡 モード説明",
                 value=(
                     "**📝 Embedモード**: リッチな埋め込み形式で詳細情報を表示\n"
                     "**🔗 URLモード**: 動画URLのみを送信（軽量・シンプル）\n"
@@ -1061,17 +1060,24 @@ class NotificationModeChoiceView(discord.ui.View):
     async def embed_mode(self, interaction: discord.Interaction, button: discord.ui.Button):
         if debug:
             print(f"[DEBUG] embed_mode button clicked by user={interaction.user.id}")
-        
-        await self.save_notification_mode("embed", interaction)
+        try:
+            await self.save_notification_mode("embed", interaction)
+        except Exception as e:
+            if debug:
+                print(f"[DEBUG] embed_mode error: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"❌ エラーが発生しました: {e}", ephemeral=True)
+            else:
+                await interaction.followup.send(f"❌ エラーが発生しました: {e}", ephemeral=True)
 
-    @discord.ui.button(label="� URLモード", style=discord.ButtonStyle.secondary, emoji="�")
+    @discord.ui.button(label="🔗 URLモード", style=discord.ButtonStyle.secondary, emoji="🔗")
     async def url_mode(self, interaction: discord.Interaction, button: discord.ui.Button):
         if debug:
             print(f"[DEBUG] url_mode button clicked by user={interaction.user.id}")
         try:
             view = RoleMentionView(self.guild_id, self.channel_id, self.channel_info)
             embed = discord.Embed(
-                title="� ロールメンション設定",
+                title="🔗 ロールメンション設定",
                 description=f"📺 **{self.channel_info.get('channel_name', self.channel_id)}** のURLモード通知でロールメンションを設定できます。",
                 color=0x32CD32
             )
@@ -1084,7 +1090,7 @@ class NotificationModeChoiceView(discord.ui.View):
                 )
             else:
                 embed.add_field(
-                    name="� 現在の設定",
+                    name="👥 現在の設定",
                     value="**ロールメンション**: なし",
                     inline=False
                 )
@@ -1093,7 +1099,7 @@ class NotificationModeChoiceView(discord.ui.View):
                 value="ロールIDを入力するか、「なし」ボタンでメンションを無効化できます。",
                 inline=False
             )
-            embed.set_footer(text="� ロールメンション設定", icon_url="https://youtube.com/favicon.ico")
+            embed.set_footer(text="🔗 ロールメンション設定", icon_url="https://youtube.com/favicon.ico")
             if not interaction.response.is_done():
                 await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
             else:
@@ -1181,7 +1187,7 @@ class RoleMentionView(discord.ui.View):
         )
         
         await interaction.response.send_message(
-            "� **ロールIDを入力**\n\n"
+            "🔢 **ロールIDを入力**\n\n"
             "メンションしたいロールのIDを入力してください。\n"
             "ロールIDの取得方法: 開発者モードを有効にして、ロールを右クリック → 「IDをコピー」",
             view=view,
@@ -1231,13 +1237,12 @@ class RoleMentionView(discord.ui.View):
         
         embed = discord.Embed(
             title="✅ URLモード設定完了",
-            description=f"� **{self.channel_info.get('channel_name', self.channel_id)}** をURLモードに設定しました。",
+            description=f"🔗 **{self.channel_info.get('channel_name', self.channel_id)}** をURLモードに設定しました。",
             color=0x32CD32
         )
-        
         if role_id:
             embed.add_field(
-                name="� ロールメンション",
+                name="👥 ロールメンション",
                 value=f"<@&{role_id}> をメンションします。",
                 inline=False
             )
@@ -1247,14 +1252,12 @@ class RoleMentionView(discord.ui.View):
                 value="メンションは設定されていません。",
                 inline=False
             )
-        
         embed.add_field(
             name="🔗 URLモード特徴",
             value="動画URLのみを送信する軽量形式です。サーバーの負荷を最小限に抑えます。",
             inline=False
         )
-        
-        embed.set_footer(text="� URLモード設定完了", icon_url="https://youtube.com/favicon.ico")
+        embed.set_footer(text="🔗 URLモード設定完了", icon_url="https://youtube.com/favicon.ico")
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
