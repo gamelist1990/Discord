@@ -40,16 +40,7 @@ if __name__ == "__main__":
         if not github_token:
             print("[ERROR] GITHUB_TOKEN環境変数が必要です。環境変数を設定してください。")
             sys.exit(1)
-        # github_userは必ずgit configから取得
-        try:
-            result = subprocess.run(["git", "config", "user.name"], capture_output=True, text=True, check=True)
-            github_user = result.stdout.strip()
-            print(f"[INFO] git config user.name: {github_user}")
-            if not github_user:
-                raise ValueError
-        except Exception:
-            print("[ERROR] git config user.nameからユーザー名が取得できません。gitのユーザー名を設定してください。")
-            sys.exit(1)
+        github_user = "Koukunn_"  # 固定値
         repo_url = "gamelist1990/Discord"  # 固定値
         subprocess.run(["git", "add", "."], check=True)
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
