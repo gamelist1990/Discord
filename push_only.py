@@ -35,20 +35,43 @@ r = requests.get(
 )
 print(f"[DEBUG] GET /contents レスポンス: {r.status_code} {r.text[:200]}")
 if r.status_code == 200:
-    sha = r.json()["sha"]
+    response_data = r.json()
+    sha = response_data["sha"]
+    current_content = response_data["content"]
     print(f"[INFO] 取得したSHA: {sha}")
+    print(f"[INFO] 現在のGitHubファイル内容を取得完了")
+elif r.status_code == 404:
+    print(f"[INFO] ファイルがGitHub上に存在しません。新規作成します。")
+    sha = None
+    current_content = None
 else:
-    print(f"[ERROR] SHA取得失敗: {r.text}")
+    print(f"[ERROR] GitHub APIからファイル情報の取得に失敗: {r.status_code} - {r.text}")
     exit(1)
+
+# 内容の比較
+if current_content is not None:
+    print(f"[INFO] ローカルファイルとGitHubファイルの内容を比較中...")
+    # GitHubから取得した内容は改行文字が含まれている可能性があるため、それを除去して比較
+    github_content_cleaned = current_content.replace('\n', '')
+    if content == github_content_cleaned:
+        print(f"[INFO] ファイル内容に変更がありません。更新をスキップします。")
+        print("✔ ファイル内容は最新の状態です")
+        exit(0)
+    else:
+        print(f"[INFO] ファイル内容に変更が検出されました。更新を続行します。")
+else:
+    print(f"[INFO] 新規ファイルのため、内容比較をスキップして作成を続行します。")
 
 # ファイルを更新
 print(f"[INFO] ファイルを更新中... (commit message: '{COMMIT_MESSAGE}')")
 data = {
     "message": COMMIT_MESSAGE,
     "content": content,
-    "branch": BRANCH,
-    "sha": sha
+    "branch": BRANCH
 }
+# 既存ファイルの場合のみSHAを追加
+if sha is not None:
+    data["sha"] = sha
 r = requests.put(
     f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}",
     headers=headers,
