@@ -1,15 +1,12 @@
 import discord
-from discord.ext import commands, tasks
-import xml.etree.ElementTree as ET
-import aiohttp
 import asyncio
+from discord.ext import commands, tasks
 from datetime import datetime, timedelta, timezone
-import json
-import os
 import re
 from plugins import register_command
 from DataBase import get_guild_value, update_guild_data
 from plugins.common_ui import ModalInputView
+from lib.youtubeRSS import YoutubeRssApi, YoutubeLiveStatus, YoutubeVideoType
 
 
 # --- デバッグ用フラグ ---
@@ -151,14 +148,13 @@ class VideoNotificationModal(discord.ui.Modal, title="動画通知設定"):
 
     async def extract_channel_id(self, url):
         """YouTubeRSSAPIを使用してチャンネルIDを取得"""
-        youtube_api = YouTubeRSSAPI()
-        return await youtube_api.extract_channel_id(url)
+        youtube_api = YoutubeRssApi(debug_mode=debug)
+        return youtube_api.extract_channel_id(url)
 
     async def extract_channel_name(self, channel_id):
         """YouTubeRSSAPIを使用してチャンネル名を取得"""
-        youtube_api = YouTubeRSSAPI()
-        channel_info = await youtube_api.get_channel_info(channel_id)
-        return channel_info["channel_name"] if channel_info else None
+        youtube_api = YoutubeRssApi(debug_mode=debug)
+        return youtube_api.get_channel_name(channel_id)
 
     async def save_notification_config(
         self, guild_id, channel_id, channel_name, rss_url, notification_channel_id, interval
@@ -363,12 +359,6 @@ class VideoNotificationView(discord.ui.View):
             if last_live_status == "live" and was_live:
                 status_emoji = "🔴"
                 status_text = "ライブ配信中"
-            elif last_live_status == "upcoming":
-                status_emoji = "🟡" 
-                status_text = "配信予定"
-            elif was_live and last_live_status != "live":
-                status_emoji = "🟠"
-                status_text = "配信終了"
             else:
                 status_emoji = "⚫"
                 status_text = "オフライン"
@@ -515,7 +505,7 @@ class VideoNotificationHandler:
     """
     def __init__(self, bot):
         self.bot = bot
-        self.youtube_api = YouTubeRSSAPI()  # YouTube RSS API インスタンス
+        self.youtube_api = YoutubeRssApi(debug_mode=True)  # YouTube RSS API インスタンス
         if debug:
             print(f"[DEBUG] VideoNotificationHandler initialized for bot={bot}")
     
@@ -576,19 +566,19 @@ class VideoNotificationHandler:
                 print("[DEBUG] チャンネルIDが未設定")
             return
         
-        # YouTubeRSSAPIを使用して最新動画情報を取得
-        latest_video = await self.youtube_api.get_latest_video_info(channel_id)
+        # 最新動画情報をAPIで一括取得
+        latest_video = self.youtube_api.get_latest_video_info(channel_id)
         if not latest_video:
             if debug:
                 print(f"[DEBUG] 最新動画情報の取得失敗: {channel_id}")
             return
         
-        latest_video_id = latest_video["video_id"]
-        latest_live_status = latest_video.get("live_status", "none")
-        is_live_content = latest_live_status in ["live", "upcoming", "ended"]
+        latest_video_id = latest_video.video_id
+        latest_live_status = latest_video.live_status
+        is_live_content = latest_live_status in [YoutubeLiveStatus.LIVE, YoutubeLiveStatus.UPCOMING, YoutubeLiveStatus.ENDED]
         
         # 前回の状態を取得
-        last_live_status = channel_info.get("last_live_status", "none")
+        last_live_status = channel_info.get("last_live_status", YoutubeLiveStatus.NONE)
         last_live_video_id = channel_info.get("last_live_video_id")
         last_video_id = channel_info.get("last_video_id")
         was_live = channel_info.get("was_live", False)
@@ -597,90 +587,34 @@ class VideoNotificationHandler:
             print(f"[DEBUG] 状態比較 - 動画ID: {latest_video_id}, ライブ状態: {latest_live_status}, 前回ライブ状態: {last_live_status}")
             print(f"[DEBUG] 前回動画ID: {last_video_id}, 前回ライブ動画ID: {last_live_video_id}, was_live: {was_live}")
         
-        # 初回記録の場合（通知せずに状態のみ保存）
+        # 初回記録
         if not last_video_id and not last_live_video_id:
-            if debug:
-                print(f"[DEBUG] 初回記録: {channel_id} → {latest_video_id}, live={latest_live_status}")
             if is_live_content:
                 self.update_channel_state(guild.id, channel_info, live_video_id=latest_video_id, live_status=latest_live_status)
             else:
-                self.update_channel_state(guild.id, channel_info, video_id=latest_video_id, live_status="none")
+                self.update_channel_state(guild.id, channel_info, video_id=latest_video_id, live_status=YoutubeLiveStatus.NONE)
             return
         
         # === 配信コンテンツの処理 ===
         if is_live_content:
             # 配信コンテンツとして処理
-            should_notify_live = False
-            notification_type = None
-            
-            # 新しい配信の検出
-            if last_live_video_id != latest_video_id:
-                should_notify_live = True
-                notification_type = "new_live"
-                if debug:
-                    print(f"[DEBUG] 新しい配信検出: {last_live_video_id} → {latest_video_id}, status={latest_live_status}")
-            
-            # 既存配信の状態変化
-            elif last_live_video_id == latest_video_id and last_live_status != latest_live_status:
-                if last_live_status == "upcoming" and latest_live_status == "live":
-                    should_notify_live = True
-                    notification_type = "live_started"
-                    if debug:
-                        print(f"[DEBUG] 配信開始: {latest_video_id}, {last_live_status} → {latest_live_status}")
-                elif last_live_status == "none" and latest_live_status == "live":
-                    should_notify_live = True
-                    notification_type = "live_started"
-                    if debug:
-                        print(f"[DEBUG] 配信開始（予告なし）: {latest_video_id}, {last_live_status} → {latest_live_status}")
-                else:
-                    if debug:
-                        print(f"[DEBUG] 配信状態変化（通知なし）: {latest_video_id}, {last_live_status} → {latest_live_status}")
-            
-            # 配信状態を更新（動画通知は絶対に行わない）
+            should_notify_live = last_live_video_id != latest_video_id
             self.update_channel_state(guild.id, channel_info, live_video_id=latest_video_id, live_status=latest_live_status)
-            
-            # 配信通知の送信
             if should_notify_live:
                 await self.send_live_notification(guild, channel_info, latest_video)
                 if debug:
-                    print(f"[DEBUG] 配信通知送信: {latest_video_id}, type={notification_type}")
-            
+                    print(f"[DEBUG] 配信通知送信: {latest_video_id}")
+
             # 配信コンテンツの場合は動画通知を絶対に送信しない
             if debug:
                 print(f"[DEBUG] 配信コンテンツのため動画通知をスキップ: {latest_video_id}")
             return
-        
-        # === 通常動画の処理 ===
+
+        # 通常動画の処理
         else:
             # 通常動画として処理
-            should_notify_video = False
-            
-            # 新しい動画の検出
-            if last_video_id != latest_video_id:
-                # 過去にライブ配信として通知済みでないかチェック
-                if last_live_video_id != latest_video_id:
-                    should_notify_video = True
-                    if debug:
-                        print(f"[DEBUG] 新着動画検出: {last_video_id} → {latest_video_id}")
-                else:
-                    if debug:
-                        print(f"[DEBUG] 重複通知防止: 配信として既に通知済み {latest_video_id}")
-            
-            # 配信が終了した場合の処理
-            if was_live and last_live_status in ["live", "upcoming"] and latest_live_status == "none":
-                if debug:
-                    print(f"[DEBUG] 配信終了検知: {channel_id}")
-                # 配信状態をリセット
-                self.update_channel_state(guild.id, channel_info, 
-                                        video_id=latest_video_id, 
-                                        live_video_id=None, 
-                                        live_status="none")
-                return
-            
-            # 通常動画状態を更新
-            self.update_channel_state(guild.id, channel_info, video_id=latest_video_id, live_status="none")
-            
-            # 動画通知の送信
+            should_notify_video = last_video_id != latest_video_id and last_live_video_id != latest_video_id
+            self.update_channel_state(guild.id, channel_info, video_id=latest_video_id, live_status=YoutubeLiveStatus.NONE)
             if should_notify_video:
                 await self.send_video_notification(guild, channel_info, latest_video)
                 if debug:
@@ -688,256 +622,6 @@ class VideoNotificationHandler:
         
         if debug:
             print(f"[DEBUG] チェック完了: {latest_video_id}, live={latest_live_status}, is_live_content={is_live_content}")
-
-    async def fetch_channel_name(self, rss_url):
-        """非推奨: YouTubeRSSAPIを使用してください"""
-        if debug:
-            print(f"[DEBUG] fetch_channel_name (deprecated): rss_url={rss_url}")
-        # YouTubeRSSAPIへの移行用ラッパー
-        channel_id = rss_url.split("channel_id=")[-1]
-        channel_info = await self.youtube_api.get_channel_info(channel_id)
-        return channel_info["channel_name"] if channel_info else None
-
-    def get_next_update_time(self, channel_info):
-        if debug:
-            print(f"[DEBUG] get_next_update_time: channel_id={channel_info.get('channel_id')}")
-
-        """次回更新予定時刻を返す"""
-        last_check = channel_info.get("last_check")
-        interval = channel_info.get("interval", 30)
-        try:
-            if last_check:
-                last_dt = datetime.fromisoformat(last_check)
-                return last_dt + timedelta(minutes=interval)
-        except Exception:
-            pass
-        return None
-
-    async def fetch_channel_data_with_retry(self, channel_id, max_retries=3):
-        """非推奨: YouTubeRSSAPI.get_latest_videos()を使用してください"""
-        if debug:
-            print(f"[DEBUG] fetch_channel_data_with_retry (deprecated): channel_id={channel_id}")
-        # YouTubeRSSAPIへの移行用ラッパー
-        videos_data = await self.youtube_api.get_latest_videos(channel_id, max_retries)
-        if videos_data:
-            return {
-                "xml_content": videos_data["xml_content"],
-                "entries": [self._video_to_entry(v) for v in videos_data["videos"]],
-                "channel_id": channel_id,
-            }
-        return None
-    
-    def _video_to_entry(self, video_info):
-        """動画情報を旧形式のentryオブジェクト風に変換（互換性のため）"""
-        # この関数は移行期間中のみ使用
-        class MockElem:
-            def __init__(self, text):
-                self.text = text
-        
-        class MockEntry:
-            def __init__(self, video_info):
-                self.video_info = video_info
-            
-            def find(self, tag):
-                if "videoId" in tag:
-                    return MockElem(self.video_info["video_id"])
-                elif "title" in tag:
-                    return MockElem(self.video_info["title"])
-                elif "name" in tag:
-                    return MockElem(self.video_info["author"])
-                elif "published" in tag:
-                    return MockElem(self.video_info["published"])
-                return None
-        
-        return MockEntry(video_info)
-
-    async def check_if_live(self, video_id):
-        """非推奨: YouTubeRSSAPI.check_if_live()を使用してください"""
-        if debug:
-            print(f"[DEBUG] check_if_live (deprecated): video_id={video_id}")
-        return await self.youtube_api.check_if_live(video_id)
-
-    async def send_video_notification(self, guild, channel_info, video_info):
-        if debug:
-            print(
-                f"[DEBUG] send_video_notification: guild={guild.id}, channel={channel_info.get('channel_id')}, video={video_info.get('video_id')}"
-            )
-
-        """通常動画通知を送信（ライブ配信ではない動画のみ）"""
-        try:
-            notification_channel_id = channel_info.get("notification_channel")
-            if not notification_channel_id:
-                return
-
-            channel = guild.get_channel(notification_channel_id)
-            if not channel:
-                return
-
-            # ライブ配信コンテンツでないことを再確認
-            live_status = video_info.get("live_status", "none")
-            if live_status in ["live", "upcoming", "ended"]:
-                if debug:
-                    print(f"[DEBUG] 配信コンテンツのため動画通知をスキップ: {video_info['video_id']}, status={live_status}")
-                return
-
-            # カスタムメッセージがあるかチェック
-            custom_message = channel_info.get("custom_video_message")
-            
-            if custom_message:
-                # カスタムメッセージを使用（プレースホルダーを置換）
-                published_dt = datetime.fromisoformat(
-                    video_info["published"].replace("Z", "+00:00")
-                )
-                published_str = published_dt.strftime("%Y年%m月%d日 %H:%M")
-                
-                message = custom_message.format(
-                    title=video_info["title"],
-                    url=video_info["url"],
-                    author=video_info["author"],
-                    published=published_str
-                )
-                
-                await channel.send(message)
-                print(
-                    f"[{datetime.now().strftime('%H:%M:%S')}] カスタム動画通知送信: {video_info['title']}"
-                )
-            else:
-                # デフォルトのEmbed形式で送信
-                published_dt = datetime.fromisoformat(
-                    video_info["published"].replace("Z", "+00:00")
-                )
-                published_str = published_dt.strftime("%Y年%m月%d日 %H:%M")
-
-                embed = discord.Embed(
-                    title="🎬 新着動画が投稿されました！",
-                    description=(
-                        f"📺 **{video_info['author']}** が新しい動画を投稿しました！\n\n"
-                        f"🎥 **[{video_info['title']}]({video_info['url']})**\n\n"
-                        f"📅 **投稿日時**: {published_str}  |  🎯 **[今すぐ視聴する]({video_info['url']})**"
-                    ),
-                    color=0xFF4500,  # オレンジレッド
-                    timestamp=datetime.now(JST),
-                )
-
-                # サムネイルを設定
-                thumbnail_url = (
-                    f"https://img.youtube.com/vi/{video_info['video_id']}/maxresdefault.jpg"
-                )
-                embed.set_image(url=thumbnail_url)
-
-                embed.set_footer(
-                    text=f"🎬 {video_info['author']} • YouTube新着動画通知", 
-                    icon_url="https://youtube.com/favicon.ico"
-                )
-
-                await channel.send(embed=embed)
-                print(
-                    f"[{datetime.now().strftime('%H:%M:%S')}] 動画通知送信: {video_info['title']}"
-                )
-
-        except Exception as e:
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] 動画通知送信エラー: {e}")
-
-    async def send_live_notification(self, guild, channel_info, video_info):
-        if debug:
-            print(
-                f"[DEBUG] send_live_notification: guild={guild.id}, channel={channel_info.get('channel_id')}, video={video_info.get('video_id')}"
-            )
-
-        """ライブ配信通知を送信"""
-        try:
-            notification_channel_id = channel_info.get("notification_channel")
-            if not notification_channel_id:
-                return
-
-            channel = guild.get_channel(notification_channel_id)
-            if not channel:
-                return
-
-            live_status = video_info.get("live_status", "none")
-            
-            # カスタムメッセージがあるかチェック
-            custom_message = channel_info.get("custom_live_message")
-            
-            if custom_message:
-                # カスタムメッセージを使用（プレースホルダーを置換）
-                message = custom_message.format(
-                    title=video_info["title"],
-                    url=video_info["url"],
-                    author=video_info["author"]
-                )
-                
-                await channel.send(message)
-                print(
-                    f"[{datetime.now().strftime('%H:%M:%S')}] カスタム配信通知送信: {video_info['title']} (status: {live_status})"
-                )
-            else:
-                # デフォルトのEmbed形式で送信
-                if live_status == "live":
-                    title = "🔴 ライブ配信が開始されました！"
-                    description = f"📡 **{video_info['author']}** がライブ配信を開始しました！\n今すぐ参加して楽しみましょう 🎉"
-                    color = 0xFF0000  # 鮮やかな赤
-                    status_text = "🟢 LIVE配信中"
-                elif live_status == "upcoming":
-                    title = "🟡 ライブ配信が予定されています！"
-                    description = f"📺 **{video_info['author']}** がライブ配信を予定しています！\n配信開始をお待ちください 🎬"
-                    color = 0xFFD700  # ゴールド
-                    status_text = "🟡 配信予定"
-                else:
-                    title = "🔴 ライブ配信関連通知"
-                    description = f"📡 **{video_info['author']}** の配信情報が更新されました！"
-                    color = 0xFF6347  # トマト色
-                    status_text = f"📊 {live_status}"
-
-                embed = discord.Embed(
-                    title=title,
-                    description=description,
-                    color=color,
-                    timestamp=datetime.now(JST),
-                )
-
-                embed.add_field(
-                    name="📺 配信タイトル",
-                    value=f"**[{video_info['title']}]({video_info['url']})**",
-                    inline=False,
-                )
-
-                embed.add_field(
-                    name="👤 チャンネル", 
-                    value=f"```\n{video_info['author']}\n```", 
-                    inline=True
-                )
-
-                embed.add_field(
-                    name="📡 配信状態", 
-                    value=f"```\n{status_text}\n```", 
-                    inline=True
-                )
-
-                embed.add_field(
-                    name="🎯 今すぐ視聴",
-                    value=f"**[🔗 配信を見る]({video_info['url']})**",
-                    inline=True,
-                )
-
-                # サムネイルを設定
-                thumbnail_url = (
-                    f"https://img.youtube.com/vi/{video_info['video_id']}/maxresdefault.jpg"
-                )
-                embed.set_image(url=thumbnail_url)
-
-                embed.set_footer(
-                    text="🔴 YouTubeライブ配信通知システム", 
-                    icon_url="https://youtube.com/favicon.ico"
-                )
-
-                await channel.send(embed=embed)
-                print(
-                    f"[{datetime.now().strftime('%H:%M:%S')}] 配信通知送信: {video_info['title']} (status: {live_status})"
-                )
-
-        except Exception as e:
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] 配信通知送信エラー: {e}")
 
     def update_channel_state(self, guild_id, channel_info, video_id=None, live_video_id=None, live_status=None):
         if debug:
@@ -980,309 +664,161 @@ class VideoNotificationHandler:
         if debug:
             print(f"[DEBUG] 状態更新完了: video_id={channel_info.get('last_video_id')}, live_video_id={channel_info.get('last_live_video_id')}, live_status={channel_info.get('last_live_status')}, was_live={channel_info.get('was_live')}")
 
+    # 通知送信メソッドを追加
+    async def send_video_notification(self, guild, channel_info, video_info):
+        """通常動画通知を送信"""
+        try:
+            notification_channel_id = channel_info.get("notification_channel")
+            if not notification_channel_id:
+                return
 
-# --- YouTube RSS API クラス ---
-class YouTubeRSSAPI:
-    """
-    YouTube RSS フィードを扱うためのAPI化されたクラス
-    チャンネル情報の取得、動画情報の取得、ライブ判定などを統合
-    """
-    
-    def __init__(self):
-        self.session = None
-        if debug:
-            print("[DEBUG] YouTubeRSSAPI initialized")
-    
-    async def extract_channel_id(self, url):
-        """YouTubeチャンネルURLからチャンネルID（UC...）を抽出"""
-        if debug:
-            print(f"[DEBUG] YouTubeRSSAPI.extract_channel_id: url={url}")
-        
-        patterns = [
-            r"youtube\.com/channel/([a-zA-Z0-9_-]+)",
-            r"youtube\.com/c/([a-zA-Z0-9_-]+)",
-            r"youtube\.com/user/([a-zA-Z0-9_-]+)",
-            r"youtube\.com/@([a-zA-Z0-9_-]+)",
-        ]
-        
-        for pattern in patterns:
-            m = re.search(pattern, url)
-            if m:
-                val = m.group(1)
-                if val.startswith("UC"):
-                    return val
-                # UCでなければHTMLから取得
-                return await self._extract_channel_id_from_html(url)
-        return None
-    
-    async def _extract_channel_id_from_html(self, url):
-        """HTMLページからチャンネルIDを抽出"""
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as resp:
-                    if resp.status != 200:
-                        return None
-                    html = await resp.text()
-                    # 1. "channelId":"UCxxxx" を探す
-                    m = re.search(r'"channelId":"(UC[^"]+)"', html)
-                    if m:
-                        return m.group(1)
-                    # 2. og:url を探す
-                    m = re.search(
-                        r'<meta property="og:url" content="https://www.youtube.com/channel/(UC[^"]+)">',
-                        html,
-                    )
-                    if m:
-                        return m.group(1)
-        except Exception as e:
-            if debug:
-                print(f"[DEBUG] HTMLからのチャンネルID取得エラー: {e}")
-        return None
-    
-    async def get_channel_info(self, channel_id):
-        """チャンネル情報を取得（名前、RSS URL等）"""
-        if debug:
-            print(f"[DEBUG] YouTubeRSSAPI.get_channel_info: channel_id={channel_id}")
-        
-        rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
-        channel_name = await self._extract_channel_name_from_rss(rss_url)
-        
-        return {
-            "channel_id": channel_id,
-            "channel_name": channel_name or channel_id,
-            "rss_url": rss_url
-        }
-    
-    async def _extract_channel_name_from_rss(self, rss_url):
-        """RSSフィードからチャンネル名を取得"""
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(rss_url) as resp:
-                    if resp.status == 200:
-                        xml_content = await resp.text()
-                        root = ET.fromstring(xml_content)
-                        title_elem = root.find(".//{http://www.w3.org/2005/Atom}title")
-                        if title_elem is not None:
-                            return title_elem.text
-        except Exception as e:
-            if debug:
-                print(f"[DEBUG] RSSからのチャンネル名取得エラー: {e}")
-        return None
-    
-    async def get_latest_videos(self, channel_id, max_retries=3):
-        """チャンネルの最新動画リストを取得"""
-        if debug:
-            print(f"[DEBUG] YouTubeRSSAPI.get_latest_videos: channel_id={channel_id}")
-        
-        for attempt in range(max_retries):
-            try:
-                rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(rss_url) as response:
-                        if response.status == 200:
-                            xml_content = await response.text()
-                            return self._parse_rss_videos(xml_content, channel_id)
-                        elif response.status == 429:  # Rate limit
-                            wait_time = 60 * (attempt + 1)
-                            if debug:
-                                print(f"[DEBUG] レート制限: {wait_time}秒待機")
-                            await asyncio.sleep(wait_time)
-                        else:
-                            if debug:
-                                print(f"[DEBUG] HTTP {response.status}: {channel_id}")
-                            return None
-            except Exception as e:
+            channel = guild.get_channel(notification_channel_id)
+            if not channel:
+                return
+
+            # ライブ配信コンテンツでないことを再確認
+            live_status = video_info.live_status
+            if live_status in [YoutubeLiveStatus.LIVE, YoutubeLiveStatus.UPCOMING, YoutubeLiveStatus.ENDED]:
                 if debug:
-                    print(f"[DEBUG] RSS取得エラー (試行 {attempt + 1}): {e}")
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(5 * (attempt + 1))
-        return None
-    
-    def _parse_rss_videos(self, xml_content, channel_id):
-        """RSS XMLから動画情報をパース"""
-        try:
-            root = ET.fromstring(xml_content)
-            entries = root.findall(".//{http://www.w3.org/2005/Atom}entry")
-            
-            videos = []
-            for entry in entries:
-                video_info = self._parse_video_entry(entry)
-                if video_info:
-                    videos.append(video_info)
-            
-            return {
-                "channel_id": channel_id,
-                "videos": videos,
-                "xml_content": xml_content
-            }
-        except Exception as e:
-            if debug:
-                print(f"[DEBUG] RSS解析エラー: {e}")
-            return None
-    
-    def _parse_video_entry(self, entry):
-        """個別の動画エントリーをパース"""
-        try:
-            video_id_elem = entry.find("{http://www.youtube.com/xml/schemas/2015}videoId")
-            title_elem = entry.find("{http://www.w3.org/2005/Atom}title")
-            author_elem = entry.find("{http://www.w3.org/2005/Atom}author/{http://www.w3.org/2005/Atom}name")
-            published_elem = entry.find("{http://www.w3.org/2005/Atom}published")
-            
-            if video_id_elem is None:
-                return None
-            
-            video_id = video_id_elem.text
-            return {
-                "video_id": video_id,
-                "title": title_elem.text if title_elem is not None else "No Title",
-                "author": author_elem.text if author_elem is not None else "Unknown",
-                "published": published_elem.text if published_elem is not None else datetime.now(JST).isoformat(),
-                "url": f"https://www.youtube.com/watch?v={video_id}",
-            }
-        except Exception as e:
-            if debug:
-                print(f"[DEBUG] 動画エントリー解析エラー: {e}")
-            return None
-    
-    async def check_if_live(self, video_id):
-        """動画がライブ配信かどうかをチェック"""
-        if debug:
-            print(f"[DEBUG] YouTubeRSSAPI.check_if_live: video_id={video_id}")
-        
-        try:
-            video_url = f"https://www.youtube.com/watch?v={video_id}"
-            timeout = aiohttp.ClientTimeout(total=10)
-            async with aiohttp.ClientSession() as session:
-                async with session.get(video_url, timeout=timeout) as response:
-                    if response.status != 200:
-                        return False
-                    content = await response.text()
-                    is_live = (
-                        '"isLive":true' in content
-                    )
-                    await asyncio.sleep(1)  # Rate limiting
-                    return is_live
-        except asyncio.TimeoutError:
-            if debug:
-                print(f"[DEBUG] ライブ判定タイムアウト: {video_id}")
-            return False
-        except Exception as e:
-            if debug:
-                print(f"[DEBUG] ライブ判定エラー: {e}")
-            return False
-    
-    async def get_live_status(self, video_id):
-        """動画のライブ状態を詳細に取得（none, upcoming, live, ended）"""
-        if debug:
-            print(f"[DEBUG] YouTubeRSSAPI.get_live_status: video_id={video_id}")
-        
-        try:
-            video_url = f"https://www.youtube.com/watch?v={video_id}"
-            timeout = aiohttp.ClientTimeout(total=15)
-            async with aiohttp.ClientSession() as session:
-                async with session.get(video_url, timeout=timeout) as response:
-                    if response.status != 200:
-                        if debug:
-                            print(f"[DEBUG] HTTP {response.status} for {video_id}")
-                        return "none"
-                    content = await response.text()
-                    
-                    # より厳密なライブ配信判定パターン
-                    live_patterns = [
-                        '"isLive":true',
-                        '"liveBroadcastContent":"live"',
-                        'ytInitialPlayerResponse.*?"isLive":true',
-                        'hlsManifestUrl.*?live',
-                        '"status":"ok".*?"isLive":true'
-                    ]
-                    
-                    upcoming_patterns = [
-                        '"liveBroadcastContent":"upcoming"',
-                        '"isUpcoming":true',
-                        '"startTimestamp"',
-                        'ytInitialPlayerResponse.*?"isUpcoming":true',
-                        '"scheduledStartTime"'
-                    ]
-                    
-                    ended_patterns = [
-                        '"liveBroadcastContent":"none".*?"wasLive":true',
-                        '"ended":true',
-                        '"isLiveContent":true.*?"isLive":false'
-                    ]
-                    
-                    # ライブ配信中かチェック
-                    for pattern in live_patterns:
-                        if re.search(pattern, content):
-                            if debug:
-                                print(f"[DEBUG] ライブ配信中検出: {video_id} - パターン: {pattern}")
-                            return "live"
-                    
-                    # 配信予定かチェック
-                    for pattern in upcoming_patterns:
-                        if re.search(pattern, content):
-                            if debug:
-                                print(f"[DEBUG] 配信予定検出: {video_id} - パターン: {pattern}")
-                            return "upcoming"
-                    
-                    # 配信終了かチェック
-                    for pattern in ended_patterns:
-                        if re.search(pattern, content):
-                            if debug:
-                                print(f"[DEBUG] 配信終了検出: {video_id} - パターン: {pattern}")
-                            return "ended"
-                    
-                    # その他のライブ関連判定
-                    if any(keyword in content for keyword in [
-                        '"isLiveBroadcast":true',
-                        'ytInitialPlayerResponse.*?"isLiveBroadcast":true',
-                        '"videoDetails".*?"isLive"',
-                        'live_chat_renderer'
-                    ]):
-                        if debug:
-                            print(f"[DEBUG] ライブ関連コンテンツ検出（状態不明）: {video_id}")
-                        return "upcoming"  # 安全のため upcoming として扱う
-                    
-                    # 通常の動画
-                    if debug:
-                        print(f"[DEBUG] 通常動画判定: {video_id}")
-                    return "none"
-                    
-        except asyncio.TimeoutError:
-            if debug:
-                print(f"[DEBUG] ライブ状態取得タイムアウト: {video_id}")
-            return "none"
-        except Exception as e:
-            if debug:
-                print(f"[DEBUG] ライブ状態取得エラー: {e}")
-            return "none"
-    
-    async def get_latest_video_info(self, channel_id):
-        """チャンネルの最新動画情報を取得（通知チェック用）"""
-        if debug:
-            print(f"[DEBUG] YouTubeRSSAPI.get_latest_video_info: channel_id={channel_id}")
-        
-        videos_data = await self.get_latest_videos(channel_id)
-        if not videos_data or not videos_data["videos"]:
-            if debug:
-                print(f"[DEBUG] 動画データ取得失敗: {channel_id}")
-            return None
-        
-        latest_video = videos_data["videos"][0]
-        video_id = latest_video["video_id"]
-        
-        # ライブ状態を詳細にチェック
-        live_status = await self.get_live_status(video_id)
-        
-        # 動画情報にライブ状態を追加
-        latest_video["live_status"] = live_status
-        latest_video["is_live"] = (live_status == "live")
-        latest_video["is_live_content"] = (live_status in ["live", "upcoming", "ended"])
-        
-        if debug:
-            print(f"[DEBUG] 最新動画情報: {video_id}, live_status={live_status}, is_live_content={latest_video['is_live_content']}")
-        
-        return latest_video
+                    print(f"[DEBUG] 配信コンテンツのため動画通知をスキップ: {video_info.video_id}")
+                return
 
+            # カスタムメッセージがあるかチェック
+            custom_message = channel_info.get("custom_video_message")
+            
+            if custom_message:
+                # カスタムメッセージを使用（プレースホルダーを置換）
+                published_dt = datetime.fromisoformat(
+                    video_info.published.replace("Z", "+00:00")
+                )
+                published_str = published_dt.strftime("%Y年%m月%d日 %H:%M")
+                
+                message = custom_message.format(
+                    title=video_info.title,
+                    url=video_info.url,
+                    author=video_info.author,
+                    published=published_str
+                )
+                
+                await channel.send(message)
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] カスタム動画通知送信: {video_info.title}")
+            else:
+                # デフォルトのEmbed形式で送信
+                published_dt = datetime.fromisoformat(
+                    video_info.published.replace("Z", "+00:00")
+                )
+                published_str = published_dt.strftime("%Y年%m月%d日 %H:%M")
+
+                embed = discord.Embed(
+                    title="🎬 新着動画が投稿されました！",
+                    description=(
+                        f"📺 **{video_info.author}** が新しい動画を投稿しました！\n\n"
+                        f"🎥 **[{video_info.title}]({video_info.url})**\n\n"
+                        f"📅 **投稿日時**: {published_str}  |  🎯 **[今すぐ視聴する]({video_info.url})**"
+                    ),
+                    color=0xFF4500,  # オレンジレッド
+                    timestamp=datetime.now(JST),
+                )
+
+                # サムネイルを設定
+                thumbnail_url = f"https://img.youtube.com/vi/{video_info.video_id}/maxresdefault.jpg"
+                embed.set_image(url=thumbnail_url)
+
+                embed.set_footer(
+                    text=f"🎬 {video_info.author} • YouTube新着動画通知", 
+                    icon_url="https://youtube.com/favicon.ico"
+                )
+
+                await channel.send(embed=embed)
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] 動画通知送信: {video_info.title}")
+
+        except Exception as e:
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] 動画通知送信エラー: {e}")
+
+    async def send_live_notification(self, guild, channel_info, video_info):
+        """ライブ配信通知を送信"""
+        try:
+            notification_channel_id = channel_info.get("notification_channel")
+            if not notification_channel_id:
+                return
+
+            channel = guild.get_channel(notification_channel_id)
+            if not channel:
+                return
+
+            live_status = video_info.live_status
+            
+            # カスタムメッセージがあるかチェック
+            custom_message = channel_info.get("custom_live_message")
+            
+            if custom_message:
+                # カスタムメッセージを使用（プレースホルダーを置換）
+                message = custom_message.format(
+                    title=video_info.title,
+                    url=video_info.url,
+                    author=video_info.author
+                )
+                
+                await channel.send(message)
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] カスタム配信通知送信: {video_info.title} (status: {live_status})")
+            else:
+                # デフォルトのEmbed形式で送信
+                if live_status == YoutubeLiveStatus.LIVE:
+                    title = "🔴 ライブ配信が開始されました！"
+                    description = f"📺 **{video_info.author}** がライブ配信を開始しました！\n今すぐ視聴してライブ配信をお楽しみください。"
+                    color = 0xFF0000  # 赤色
+                    status_text = "配信中"
+                else:
+                    title = "🎬 新しい配信が開始されました！"
+                    description = f"📺 **{video_info.author}** が新しい配信を開始しました！"
+                    color = 0xFF4500  # オレンジレッド
+                    status_text = "配信中"
+
+                embed = discord.Embed(
+                    title=title,
+                    description=description,
+                    color=color,
+                    timestamp=datetime.now(JST),
+                )
+
+                embed.add_field(
+                    name="📺 配信タイトル",
+                    value=f"**[{video_info.title}]({video_info.url})**",
+                    inline=False,
+                )
+
+                embed.add_field(
+                    name="👤 チャンネル", 
+                    value=f"```\n{video_info.author}\n```", 
+                    inline=True
+                )
+
+                embed.add_field(
+                    name="📡 配信状態", 
+                    value=f"```\n{status_text}\n```", 
+                    inline=True
+                )
+
+                embed.add_field(
+                    name="🎯 今すぐ視聴",
+                    value=f"**[🔗 配信を見る]({video_info.url})**",
+                    inline=True,
+                )
+
+                # サムネイルを設定
+                thumbnail_url = f"https://img.youtube.com/vi/{video_info.video_id}/maxresdefault.jpg"
+                embed.set_image(url=thumbnail_url)
+
+                embed.set_footer(
+                    text="🔴 YouTubeライブ配信通知システム", 
+                    icon_url="https://youtube.com/favicon.ico"
+                )
+
+                await channel.send(embed=embed)
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] 配信通知送信: {video_info.title}")
+
+        except Exception as e:
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] 配信通知送信エラー: {e}")
 
 # --- infoコマンド本体（Cog不要、help.py方式） ---
 @commands.command()
