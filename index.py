@@ -509,6 +509,10 @@ def main():
         print(f"ℹ️ Webダッシュボード: http://0.0.0.0:5000/")
 
         await start_periodic_tasks()
+        
+        # Bot初期化完了をマーク
+        mark_bot_completed()
+        print("✔ Bot初期化が完了しました")
 
     @bot.event
     async def on_guild_join(guild):
@@ -621,6 +625,8 @@ def main():
         try:
             loop = asyncio.get_event_loop()
             loop.create_task(bot.close())
+            # シグナル受信時も正常終了とみなす
+            mark_bot_completed()
         except Exception as e:
             print(f"❌ 終了処理エラー: {e}")
         sys.exit(0)
@@ -628,7 +634,16 @@ def main():
     signal.signal(signal.SIGINT, handle_exit)
     signal.signal(signal.SIGTERM, handle_exit)
 
-    bot.run(token)
+    try:
+        bot.run(token)
+        # bot.run()が正常に終了した場合（通常はここには到達しない）
+        mark_bot_completed()
+    except KeyboardInterrupt:
+        print("\n[INFO] KeyboardInterrupt受信。正常に終了します...")
+        mark_bot_completed()
+    except Exception as e:
+        print(f"[ERROR] Bot実行中にエラーが発生: {e}")
+        # エラーの場合は完了をマークしない
 
 
 def isCommand(cmd_name):
@@ -645,18 +660,50 @@ if "--render" in sys.argv:
     RUN_PUSH_ON_EXIT = True
     print("[INFO] --render指定: 終了時にpush_only.pyを自動実行します")
 
-# push_only.py実行関数
+# 完了状態追跡
+bot_completed_successfully = False
 push_executed = False
+push_lock = threading.Lock()
+
+def mark_bot_completed():
+    """Botが正常に完了したことをマークする"""
+    global bot_completed_successfully
+    bot_completed_successfully = True
+    print("[INFO] Bot処理が正常に完了しました")
+
 def run_push_only():
+    """push_only.pyを実行する（完了状態をチェック）"""
     global push_executed
-    if RUN_PUSH_ON_EXIT and not push_executed:
+    
+    with push_lock:  # 同時実行を防ぐ
+        if not RUN_PUSH_ON_EXIT:
+            return
+            
+        if push_executed:
+            print("[INFO] push_only.py は既に実行済みです")
+            return
+            
+        if not bot_completed_successfully:
+            print("[WARNING] Bot処理が完了していないため、push_only.pyの実行をスキップします")
+            return
+            
         push_executed = True
-        try:
-            import subprocess
-            print("[INFO] push_only.py を自動実行します...")
-            subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), "push_only.py")], check=True)
-        except Exception as e:
-            print(f"[ERROR] push_only.py 実行失敗: {e}")
+        
+    try:
+        import subprocess
+        print("[INFO] push_only.py を自動実行します...")
+        result = subprocess.run(
+            [sys.executable, os.path.join(os.path.dirname(__file__), "push_only.py")], 
+            check=True,
+            timeout=300  # 5分のタイムアウト
+        )
+        print("[INFO] push_only.py の実行が完了しました")
+    except subprocess.TimeoutExpired:
+        print("[ERROR] push_only.py 実行がタイムアウトしました")
+    except subprocess.CalledProcessError as e:
+        print(f"[ERROR] push_only.py 実行に失敗: {e}")
+    except Exception as e:
+        print(f"[ERROR] push_only.py 実行中に予期しないエラー: {e}")
 
 # atexitで登録
 atexit.register(run_push_only)
@@ -665,7 +712,10 @@ atexit.register(run_push_only)
 import signal as _signal
 
 def _handle_exit_with_push(signum, frame):
-    print(f"\n[INFO] シグナル({signum})受信。push_only.pyを実行して終了します...")
+    print(f"\n[INFO] シグナル({signum})受信。")
+    # まず正常完了をマーク
+    mark_bot_completed()
+    print("[INFO] push_only.pyを実行して終了します...")
     run_push_only()
     sys.exit(0)
 
