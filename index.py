@@ -21,7 +21,6 @@ from functools import wraps
 from discord import app_commands
 from typing import Any, Callable
 import traceback
-import atexit
 import base64
 import requests
 
@@ -746,9 +745,6 @@ def run_push():
                 
         except Exception as e:
             print(f"[ERROR] database.jsonプッシュ失敗: {e}")
-
-# atexitで登録
-atexit.register(run_push)
 
 if __name__ == "__main__":
     try:
