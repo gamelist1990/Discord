@@ -117,10 +117,10 @@
         "channel_name": "こう君！",
         "created_at": "2025-06-26T14:07:52.839578+09:00",
         "interval": 1,
-        "last_check": "2025-06-27T15:44:53.202437+09:00",
+        "last_check": "2025-06-30T12:03:57.171403+09:00",
         "last_live_status": "none",
-        "last_live_video_id": "NhyXnXAaFpI",
-        "last_video_id": "NhyXnXAaFpI",
+        "last_live_video_id": null,
+        "last_video_id": "bfWGXrIiv0c",
         "notification_channel": 1119320648448213043,
         "rss_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCue_c1nQyNwfZa2cLR4fo7g",
         "was_live": false
@@ -145,11 +145,24 @@
         "last_decay": 1751006238.802845,
         "violations": [
           {
-            "type": "image",
-            "timestamp": 1751006238.802845,
-            "flags_added": 2,
             "channel_id": 1296388012552355852,
-            "message_id": 1388045493275463781
+            "flags_added": 2,
+            "message_id": 1388045493275463781,
+            "timestamp": 1751006238.802845,
+            "type": "image"
+          }
+        ]
+      },
+      "1324197102343159861": {
+        "flags": 1,
+        "last_decay": 1751169161.234255,
+        "violations": [
+          {
+            "channel_id": 1148749910825504888,
+            "flags_added": 1,
+            "message_id": 1388728849067540521,
+            "timestamp": 1751169161.234266,
+            "type": "text"
           }
         ]
       }
