@@ -3,6 +3,9 @@ from datetime import datetime
 import shutil
 import sys
 import os
+from dotenv import load_dotenv  # 追加
+
+load_dotenv()  # .envから環境変数を読み込む
 
 def create_pull_request():
     # gh CLIが存在するかチェック
@@ -33,30 +36,35 @@ def create_pull_request():
 
 if __name__ == "__main__":
     try:
+        github_token = os.getenv("GITHUB_TOKEN")
+        if not github_token:
+            print("[ERROR] GITHUB_TOKEN環境変数が必要です。環境変数を設定してください。")
+            sys.exit(1)
+        # github_userは必ずgit configから取得
+        try:
+            result = subprocess.run(["git", "config", "user.name"], capture_output=True, text=True, check=True)
+            github_user = result.stdout.strip()
+            print(f"[INFO] git config user.name: {github_user}")
+            if not github_user:
+                raise ValueError
+        except Exception:
+            print("[ERROR] git config user.nameからユーザー名が取得できません。gitのユーザー名を設定してください。")
+            sys.exit(1)
+        repo_url = "gamelist1990/Discord"  # 固定値
         subprocess.run(["git", "add", "."], check=True)
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         commit_message = f"auto: {now} 自動的にRenderのDBを更新しました"
         subprocess.run(["git", "commit", "-m", commit_message], check=True)
-
-        # --- GitHub Token認証push ---
-        github_token = os.getenv("GITHUB_TOKEN")
-        github_user = os.getenv("GITHUB_USER")
-        repo_url = os.getenv("GITHUB_REPO_URL")  # 例: username/reponame
-        if github_token and github_user and repo_url:
-            remote_url = f"https://{github_user}:{github_token}@github.com/{repo_url}.git"
-            # 元のリモートURLを保存
-            result = subprocess.run(["git", "remote", "get-url", "origin"], capture_output=True, text=True, check=True)
-            original_url = result.stdout.strip()
-            subprocess.run(["git", "remote", "set-url", "origin", remote_url], check=True)
-            try:
-                subprocess.run(["git", "push"], check=True)
-                print("✔ GitHubへAPIキー認証で自動コミット＆プッシュ完了")
-            finally:
-                subprocess.run(["git", "remote", "set-url", "origin", original_url], check=True)
-        else:
-            # 通常のpush
+        remote_url = f"https://{github_user}:{github_token}@github.com/{repo_url}.git"
+        # 元のリモートURLを保存
+        result = subprocess.run(["git", "remote", "get-url", "origin"], capture_output=True, text=True, check=True)
+        original_url = result.stdout.strip()
+        subprocess.run(["git", "remote", "set-url", "origin", remote_url], check=True)
+        try:
             subprocess.run(["git", "push"], check=True)
-            print("✔ GitHubへ自動コミット＆プッシュ完了")
+            print("✔ GitHubへAPIキー認証で自動コミット＆プッシュ完了")
+        finally:
+            subprocess.run(["git", "remote", "set-url", "origin", original_url], check=True)
     except subprocess.CalledProcessError as e:
         print(f"❌ Gitコマンドエラー: {e}")
         create_pull_request()
