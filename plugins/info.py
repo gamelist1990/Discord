@@ -56,6 +56,27 @@ class VideoNotificationModal(discord.ui.Modal, title="動画通知設定"):
                 )
                 return
 
+            # 通知チャンネルIDの自動補完
+            notification_channel_value = self.notification_channel.value.strip().lower()
+            if notification_channel_value in ("none", "", "null", "なし"):
+                if interaction.channel and hasattr(interaction.channel, 'id'):
+                    notification_channel_id = interaction.channel.id
+                    if debug:
+                        print(f"[DEBUG] 通知チャンネルIDがnone/空/なし→現在のチャンネルIDを使用: {notification_channel_id}")
+                else:
+                    await interaction.response.send_message(
+                        "❌ 通知チャンネルIDが自動取得できませんでした。コマンドをテキストチャンネルで実行してください。", ephemeral=True
+                    )
+                    return
+            else:
+                try:
+                    notification_channel_id = int(notification_channel_value)
+                except ValueError:
+                    await interaction.response.send_message(
+                        "❌ 通知チャンネルIDは数値で入力してください。", ephemeral=True
+                    )
+                    return
+
             # チャンネルIDからRSSフィードURLを生成
             channel_id = await self.extract_channel_id(self.channel_url.value)
             if not channel_id:
@@ -92,7 +113,7 @@ class VideoNotificationModal(discord.ui.Modal, title="動画通知設定"):
                 channel_id,
                 channel_name,
                 rss_url,
-                int(self.notification_channel.value),
+                notification_channel_id,
                 interval,
             )
 
@@ -114,7 +135,7 @@ class VideoNotificationModal(discord.ui.Modal, title="動画通知設定"):
             )
             embed.add_field(
                 name="🔔 通知先",
-                value=f"<#{self.notification_channel.value}>",
+                value=f"<#{notification_channel_id}>",
                 inline=True,
             )
             embed.add_field(
@@ -1130,7 +1151,7 @@ class NotificationModeChoiceView(discord.ui.View):
                 await interaction.response.send_message(f"❌ エラーが発生しました: {e}", ephemeral=True)
             else:
                 await interaction.followup.send(f"❌ エラーが発生しました: {e}", ephemeral=True)
-# ...existing code...
+
 class RoleMentionView(discord.ui.View):
     """ロールメンション設定画面"""
     def __init__(self, guild_id, channel_id, channel_info):
