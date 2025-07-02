@@ -189,6 +189,8 @@ class VideoNotificationModal(discord.ui.Modal, title="動画通知設定"):
                         "last_live_status": existing_last_live_status,
                         "was_live": existing_was_live,
                         "last_check": existing_last_check,
+                        "notification_mode": ch.get("notification_mode", "embed"),  # 通知モード保持
+                        "role_mention": ch.get("role_mention", ""),  # ロールメンション保持
                         "created_at": ch.get("created_at", datetime.now(JST).isoformat()),
                     }
                 )
@@ -207,6 +209,8 @@ class VideoNotificationModal(discord.ui.Modal, title="動画通知設定"):
                     "last_live_video_id": None,  # ライブ配信専用の動画ID管理
                     "last_live_status": "none",  # ライブ配信の状態管理
                     "was_live": False,
+                    "notification_mode": "embed",  # 新規チャンネルはEmbedモード
+                    "role_mention": "",  # 新規チャンネルはロールメンションなし
                     "created_at": datetime.now(JST).isoformat(),
                 }
             )
@@ -296,33 +300,35 @@ class VideoNotificationView(discord.ui.View):
         await interaction.followup.send(f"✅ 一斉更新が完了しました（{updated}件チェック）", ephemeral=True)
 
     @discord.ui.button(
-        label="メッセージ設定", style=discord.ButtonStyle.secondary, emoji="💬"
+        label="通知モード設定", style=discord.ButtonStyle.secondary, emoji="⚙️"
     )
-    async def customize_message(
+    async def notification_mode(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         if debug:
-            print(f"[DEBUG] customize_message called by user={interaction.user.id}")
+            print(f"[DEBUG] notification_mode called by user={interaction.user.id}")
         if not interaction.guild:
             await interaction.response.send_message(
                 "❌ このコマンドはサーバー内でのみ使用できます。", ephemeral=True
             )
             return
-        # カスタムメッセージ設定用のセレクトメニューを表示
-        view = CustomMessageView(interaction.guild.id)
+        # 通知モード設定用のセレクトメニューを表示
+        view = NotificationModeView(interaction.guild.id)
         if (
             view.select.options
             and len(view.select.options) > 0
             and view.select.options[0].value != "none"
         ):
             await interaction.response.send_message(
-                "💬 **通知メッセージをカスタマイズ**\nメッセージをカスタマイズするチャンネルを選択してください:", 
+                "⚙️ **通知モードを設定**\n通知モードを変更するチャンネルを選択してください:\n\n"
+                "📝 **Embedモード**: リッチな埋め込み形式で詳細情報を表示\n"
+                "🔗 **URLモード**: 動画URLのみを送信（軽量・シンプル）", 
                 view=view, 
                 ephemeral=True
             )
         else:
             await interaction.response.send_message(
-                "❌ カスタマイズ可能なチャンネルがありません。先にチャンネルを設定してください。", 
+                "❌ 設定可能なチャンネルがありません。先にチャンネルを設定してください。", 
                 ephemeral=True
             )
 
@@ -370,18 +376,21 @@ class VideoNotificationView(discord.ui.View):
             if last_video_id:
                 video_info += f"🎬 **最新動画**: `{last_video_id[:11]}...`\n"
             
-            # カスタムメッセージ設定状況
-            has_custom_video = bool(channel_info.get("custom_video_message"))
-            has_custom_live = bool(channel_info.get("custom_live_message"))
-            custom_status = ""
-            if has_custom_video and has_custom_live:
-                custom_status = "💬 動画・ライブ両方カスタム"
-            elif has_custom_video:
-                custom_status = "💬 動画のみカスタム"
-            elif has_custom_live:
-                custom_status = "💬 ライブのみカスタム"
+            # 通知モード設定状況
+            notification_mode = channel_info.get("notification_mode", "embed")
+            if notification_mode == "url":
+                mode_text = "🔗 URLモード（軽量）"
+                mode_emoji = "🔗"
             else:
-                custom_status = "📝 デフォルトメッセージ"
+                mode_text = "� Embedモード（詳細）"
+                mode_emoji = "📝"
+            
+            # ロールメンション設定状況
+            role_mention = channel_info.get("role_mention", "")
+            if role_mention:
+                role_text = f"� ロールメンション: <@&{role_mention}>"
+            else:
+                role_text = "� ロールメンション: なし"
               # 次回更新予定時刻
             last_check = channel_info.get("last_check")
             interval = channel_info.get("interval", 30)
@@ -405,7 +414,8 @@ class VideoNotificationView(discord.ui.View):
                     f"⏰ **間隔**: `{interval}分`  📊 **状態**: `{status_text}`\n"
                     f"{video_info}"
                     f"🔄 **次回更新**: {next_update_str}\n"
-                    f"{custom_status}\n"
+                    f"{mode_emoji} **通知形式**: {mode_text}\n"
+                    f"{role_text}\n"
                     f"📅 **設定日**: `{channel_info.get('created_at', 'N/A')[:10]}`"
                 ),
                 inline=False,
@@ -683,27 +693,20 @@ class VideoNotificationHandler:
                     print(f"[DEBUG] 配信コンテンツのため動画通知をスキップ: {video_info.video_id}")
                 return
 
-            # カスタムメッセージがあるかチェック
-            custom_message = channel_info.get("custom_video_message")
+            # 通知モードを確認
+            notification_mode = channel_info.get("notification_mode", "embed")
+            role_mention = channel_info.get("role_mention", "")
             
-            if custom_message:
-                # カスタムメッセージを使用（プレースホルダーを置換）
-                published_dt = datetime.fromisoformat(
-                    video_info.published.replace("Z", "+00:00")
-                )
-                published_str = published_dt.strftime("%Y年%m月%d日 %H:%M")
-                
-                message = custom_message.format(
-                    title=video_info.title,
-                    url=video_info.url,
-                    author=video_info.author,
-                    published=published_str
-                )
+            if notification_mode == "url":
+                # URLモード: 動画URLのみ送信
+                message = video_info.url
+                if role_mention:
+                    message = f"<@&{role_mention}> {message}"
                 
                 await channel.send(message)
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] カスタム動画通知送信: {video_info.title}")
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] URL動画通知送信: {video_info.title}")
             else:
-                # デフォルトのEmbed形式で送信
+                # Embedモード: リッチな埋め込み形式で送信
                 published_dt = datetime.fromisoformat(
                     video_info.published.replace("Z", "+00:00")
                 )
@@ -729,8 +732,9 @@ class VideoNotificationHandler:
                     icon_url="https://youtube.com/favicon.ico"
                 )
 
-                await channel.send(embed=embed)
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] 動画通知送信: {video_info.title}")
+                content = f"<@&{role_mention}>" if role_mention else None
+                await channel.send(content=content, embed=embed)
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] Embed動画通知送信: {video_info.title}")
 
         except Exception as e:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] 動画通知送信エラー: {e}")
@@ -748,21 +752,20 @@ class VideoNotificationHandler:
 
             live_status = video_info.live_status
             
-            # カスタムメッセージがあるかチェック
-            custom_message = channel_info.get("custom_live_message")
+            # 通知モードを確認
+            notification_mode = channel_info.get("notification_mode", "embed")
+            role_mention = channel_info.get("role_mention", "")
             
-            if custom_message:
-                # カスタムメッセージを使用（プレースホルダーを置換）
-                message = custom_message.format(
-                    title=video_info.title,
-                    url=video_info.url,
-                    author=video_info.author
-                )
+            if notification_mode == "url":
+                # URLモード: 配信URLのみ送信
+                message = video_info.url
+                if role_mention:
+                    message = f"<@&{role_mention}> {message}"
                 
                 await channel.send(message)
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] カスタム配信通知送信: {video_info.title} (status: {live_status})")
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] URL配信通知送信: {video_info.title} (status: {live_status})")
             else:
-                # デフォルトのEmbed形式で送信
+                # Embedモード: リッチな埋め込み形式で送信
                 if live_status == YoutubeLiveStatus.LIVE:
                     title = "🔴 ライブ配信が開始されました！"
                     description = f"📺 **{video_info.author}** がライブ配信を開始しました！\n今すぐ視聴してライブ配信をお楽しみください。"
@@ -814,8 +817,9 @@ class VideoNotificationHandler:
                     icon_url="https://youtube.com/favicon.ico"
                 )
 
-                await channel.send(embed=embed)
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] 配信通知送信: {video_info.title}")
+                content = f"<@&{role_mention}>" if role_mention else None
+                await channel.send(content=content, embed=embed)
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] Embed配信通知送信: {video_info.title}")
 
         except Exception as e:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] 配信通知送信エラー: {e}")
@@ -845,7 +849,7 @@ async def info(ctx):
         "+ 複数チャンネル同時監視\n"
         "+ XMLフィード活用（API不要）\n"
         "+ 高度な状態管理\n"
-        "+ 💬 カスタム通知メッセージ\n"
+        "+ ⚙️ Embed/URLモード選択\n"
         "```",
         inline=False,
     )
@@ -862,23 +866,23 @@ async def info(ctx):
     )
 
     embed.add_field(
-        name="⚙️ 監視システム",
+        name="⚙️ 通知モード",
         value="```\n"
-        "⏰ 設定間隔でチェック実行\n"
-        "🎬 通常動画：専用Embed\n"
-        "🔴 ライブ配信：専用Embed\n"
+        "📝 Embedモード：詳細表示\n"
+        "🔗 URLモード：軽量・シンプル\n"
+        "� ロールメンション対応\n"
         "🛡️ レート制限対策完備\n"
         "```",
         inline=True,
     )
 
     embed.add_field(
-        name="💬 カスタマイズ機能",
+        name="🎯 軽量化設計",
         value="```\n"
-        "� 動画・ライブ通知メッセージ\n"
-        "� プレースホルダー対応\n"
-        "🎨 チャンネル別個別設定\n"
-        "🔄 デフォルトに戻す機能\n"
+        "⚡ コード大幅削減\n"
+        "🔗 URLモード：最小負荷\n"
+        "📝 Embedモード：リッチ表示\n"
+        "� 高速処理・安定動作\n"
         "```",
         inline=True,
     )
@@ -894,21 +898,21 @@ async def info(ctx):
     await ctx.send(embed=embed, view=view)
 
 
-class CustomMessageView(discord.ui.View):
-    """カスタムメッセージ設定用のセレクトメニュー"""
+class NotificationModeView(discord.ui.View):
+    """通知モード設定用のセレクトメニュー"""
     def __init__(self, guild_id):
         super().__init__(timeout=300)
         if debug:
-            print(f"[DEBUG] CustomMessageView initialized for guild={guild_id}")
+            print(f"[DEBUG] NotificationModeView initialized for guild={guild_id}")
         self.guild_id = guild_id
-        self.select = self.create_message_select()
+        self.select = self.create_mode_select()
         self.add_item(self.select)
 
-    def create_message_select(self):
+    def create_mode_select(self):
         if debug:
-            print(f"[DEBUG] create_message_select for guild={self.guild_id}")
+            print(f"[DEBUG] create_mode_select for guild={self.guild_id}")
 
-        """カスタムメッセージ設定用セレクトメニューを作成"""
+        """通知モード設定用セレクトメニューを作成"""
         options = []
 
         channels = get_guild_value(self.guild_id, "youtube_channels", [])
@@ -918,46 +922,50 @@ class CustomMessageView(discord.ui.View):
             channel_name = channel_info.get("channel_name") or channel_id
             notification_channel = channel_info.get("notification_channel", "Unknown")
             
-            # カスタムメッセージの設定状況を表示
-            has_custom = bool(channel_info.get("custom_video_message") or channel_info.get("custom_live_message"))
-            status_text = "✅ カスタム設定済み" if has_custom else "📝 デフォルト"
+            # 現在の通知モード
+            current_mode = channel_info.get("notification_mode", "embed")
+            mode_text = "Embed" if current_mode == "embed" else "URL"
             
             options.append(
                 discord.SelectOption(
-                    label=f"{channel_name}",
-                    description=f"通知先: #{notification_channel} | {status_text}",
+                    label=f"{channel_name[:45]}{'...' if len(channel_name) > 45 else ''}",
+                    description=f"現在: {mode_text}モード | 通知先: #{notification_channel}",
                     value=channel_id,
-                    emoji="💬"
+                    emoji="�"
                 )
             )
 
         if not options:
             options.append(
                 discord.SelectOption(
-                    label="カスタマイズ可能なチャンネルがありません",
-                    description="先にチャンネルを設定してください",
+                    label="設定可能なチャンネルなし",
+                    description="先にYouTubeチャンネルを設定してください",
                     value="none",
+                    emoji="❌"
                 )
             )
 
-        select = discord.ui.Select(placeholder="メッセージをカスタマイズするチャンネルを選択...", options=options)
-        select.callback = self.message_callback
+        select = discord.ui.Select(
+            placeholder="通知モードを変更するチャンネルを選択...",
+            options=options[:25]  # Discord制限
+        )
+        select.callback = self.select_callback
         return select
 
-    async def message_callback(self, interaction: discord.Interaction):
+    async def select_callback(self, interaction: discord.Interaction):
         if debug:
-            print(f"[DEBUG] message_callback called by user={interaction.user.id}")
-
+            print(f"[DEBUG] NotificationModeView select_callback: user={interaction.user.id}, value={self.select.values[0]}")
+        
         if self.select.values[0] == "none":
             await interaction.response.send_message(
-                "❌ カスタマイズ可能なチャンネルがありません。", ephemeral=True
+                "❌ 設定可能なチャンネルがありません。", 
+                ephemeral=True
             )
             return
 
         channel_id = self.select.values[0]
-        
-        # 現在のチャンネル情報を取得
         channels = get_guild_value(self.guild_id, "youtube_channels", [])
+        
         channel_info = None
         for ch in channels:
             if ch.get("channel_id") == channel_id:
@@ -966,208 +974,245 @@ class CustomMessageView(discord.ui.View):
         
         if not channel_info:
             await interaction.response.send_message(
-                "❌ チャンネル情報が見つかりません。", ephemeral=True
+                "❌ チャンネル情報が見つかりません。", 
+                ephemeral=True
             )
             return
 
-        # カスタムメッセージ設定画面を表示
-        view = CustomMessageTypeView(self.guild_id, channel_id, channel_info)
+        # 通知モード選択画面を表示
+        view = NotificationModeChoiceView(self.guild_id, channel_id, channel_info)
         
-        channel_name = channel_info.get("channel_name") or channel_id
+        current_mode = channel_info.get("notification_mode", "embed")
+        mode_text = "Embedモード（詳細）" if current_mode == "embed" else "URLモード（軽量）"
+        
         embed = discord.Embed(
-            title="💬 通知メッセージのカスタマイズ",
-            description=f"📺 **{channel_name}** の通知メッセージを設定できます。\n\n設定したいメッセージの種類を選択してください：",
-            color=0x9932CC,  # ダークバイオレット
+            title="⚙️ 通知モードを選択",
+            description=f"📺 **{channel_info.get('channel_name', channel_id)}** の通知モードを選択してください。",
+            color=0x1E90FF
         )
         
-        # 現在の設定状況を表示
-        current_video = channel_info.get("custom_video_message", "デフォルト")
-        current_live = channel_info.get("custom_live_message", "デフォルト")
-        
         embed.add_field(
-            name="🎬 動画通知メッセージ",
-            value=f"```\n{current_video[:100]}{'...' if len(current_video) > 100 else ''}\n```" if current_video != "デフォルト" else "`デフォルトメッセージを使用`",
+            name="� 現在の設定",
+            value=f"**通知モード**: {mode_text}",
             inline=False
         )
         
         embed.add_field(
-            name="🔴 ライブ通知メッセージ",
-            value=f"```\n{current_live[:100]}{'...' if len(current_live) > 100 else ''}\n```" if current_live != "デフォルト" else "`デフォルトメッセージを使用`",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="📝 使用可能なプレースホルダー",
+            name="� モード説明",
             value=(
-                "`{title}` - 動画/配信タイトル\n"
-                "`{url}` - 動画/配信URL\n"
-                "`{author}` - チャンネル名\n"
-                "`{published}` - 公開日時（動画のみ）"
+                "**📝 Embedモード**: リッチな埋め込み形式で詳細情報を表示\n"
+                "**🔗 URLモード**: 動画URLのみを送信（軽量・シンプル）\n"
+                "**👥 ロールメンション**: URLモードではロールメンション可能"
             ),
             inline=False
         )
         
-        embed.set_footer(text="💬 YouTube通知メッセージカスタマイズ", icon_url="https://youtube.com/favicon.ico")
+        embed.set_footer(text="⚙️ YouTube通知モード設定", icon_url="https://youtube.com/favicon.ico")
         
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
-class CustomMessageTypeView(discord.ui.View):
-    """動画/ライブメッセージの選択画面"""
+class NotificationModeChoiceView(discord.ui.View):
+    """通知モード（Embed/URL）の選択画面"""
     def __init__(self, guild_id, channel_id, channel_info):
         super().__init__(timeout=300)
         self.guild_id = guild_id
         self.channel_id = channel_id
         self.channel_info = channel_info
         if debug:
-            print(f"[DEBUG] CustomMessageTypeView initialized: guild={guild_id}, channel={channel_id}")
+            print(f"[DEBUG] NotificationModeChoiceView initialized: guild={guild_id}, channel={channel_id}")
 
-    @discord.ui.button(label="🎬 動画通知メッセージ", style=discord.ButtonStyle.primary, emoji="🎬")
-    async def video_message(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="📝 Embedモード", style=discord.ButtonStyle.primary, emoji="📝")
+    async def embed_mode(self, interaction: discord.Interaction, button: discord.ui.Button):
         if debug:
-            print(f"[DEBUG] video_message button clicked by user={interaction.user.id}")
+            print(f"[DEBUG] embed_mode button clicked by user={interaction.user.id}")
         
-        current_message = self.channel_info.get("custom_video_message", "")
+        await self.save_notification_mode("embed", interaction)
+
+    @discord.ui.button(label="� URLモード", style=discord.ButtonStyle.secondary, emoji="�")
+    async def url_mode(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if debug:
+            print(f"[DEBUG] url_mode button clicked by user={interaction.user.id}")
         
+        # URLモードの場合、ロールメンション設定画面を表示
+        view = RoleMentionView(self.guild_id, self.channel_id, self.channel_info)
+        
+        embed = discord.Embed(
+            title="� ロールメンション設定",
+            description=f"📺 **{self.channel_info.get('channel_name', self.channel_id)}** のURLモード通知でロールメンションを設定できます。",
+            color=0x32CD32
+        )
+        
+        current_role = self.channel_info.get("role_mention", "")
+        if current_role:
+            embed.add_field(
+                name="📝 現在の設定",
+                value=f"**ロールメンション**: <@&{current_role}>",
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="� 現在の設定",
+                value="**ロールメンション**: なし",
+                inline=False
+            )
+        
+        embed.add_field(
+            name="💡 使用方法",
+            value="ロールIDを入力するか、「なし」ボタンでメンションを無効化できます。",
+            inline=False
+        )
+        
+        embed.set_footer(text="� ロールメンション設定", icon_url="https://youtube.com/favicon.ico")
+        
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+    async def save_notification_mode(self, mode, interaction):
+        """通知モードを保存"""
+        if debug:
+            print(f"[DEBUG] save_notification_mode: guild={self.guild_id}, channel={self.channel_id}, mode={mode}")
+        
+        channels = get_guild_value(self.guild_id, "youtube_channels", [])
+        for i, ch in enumerate(channels):
+            if ch.get("channel_id") == self.channel_id:
+                ch["notification_mode"] = mode
+                # Embedモードの場合はロールメンションを削除
+                if mode == "embed" and "role_mention" in ch:
+                    del ch["role_mention"]
+                channels[i] = ch
+                break
+        
+        update_guild_data(self.guild_id, "youtube_channels", channels)
+        
+        mode_text = "Embedモード（詳細）" if mode == "embed" else "URLモード（軽量）"
+        
+        embed = discord.Embed(
+            title="✅ 通知モードを保存しました",
+            description=f"📺 **{self.channel_info.get('channel_name', self.channel_id)}** の通知モードを **{mode_text}** に設定しました。",
+            color=0x32CD32
+        )
+        
+        if mode == "embed":
+            embed.add_field(
+                name="📝 Embedモード特徴",
+                value="リッチな埋め込み形式で動画情報、サムネイル、詳細データを表示します。",
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="🔗 URLモード特徴", 
+                value="動画URLのみを送信する軽量形式です。必要に応じてロールメンションも設定できます。",
+                inline=False
+            )
+        
+        embed.set_footer(text="⚙️ 通知モード設定完了", icon_url="https://youtube.com/favicon.ico")
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+class RoleMentionView(discord.ui.View):
+    """ロールメンション設定画面"""
+    def __init__(self, guild_id, channel_id, channel_info):
+        super().__init__(timeout=300)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.channel_info = channel_info
+        if debug:
+            print(f"[DEBUG] RoleMentionView initialized: guild={guild_id}, channel={channel_id}")
+
+    @discord.ui.button(label="🔢 ロールID入力", style=discord.ButtonStyle.primary, emoji="🔢")
+    async def role_input(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if debug:
+            print(f"[DEBUG] role_input button clicked by user={interaction.user.id}")
+        
+        # ModalInputViewを使用してロールIDを入力
         view = ModalInputView(
-            label="💬 動画通知メッセージを設定",
-            modal_title="🎬 動画通知メッセージのカスタマイズ",
-            text_label="動画通知メッセージ",
-            placeholder="カスタムメッセージを入力 | {title} {url} {author} {published} が使用可能",
-            input_style="paragraph",
+            label="👥 ロールID設定",
+            modal_title="👥 ロールメンション設定",
+            text_label="ロールID",
+            placeholder="メンションするロールのIDを入力してください",
+            input_style="short",
             min_length=1,
-            max_length=2000,
-            on_submit=self.save_video_message,
+            max_length=20,
+            on_submit=self.save_role_mention,
             ephemeral=True
         )
         
-        # 現在のメッセージがある場合は初期値として設定
-        if current_message:
-            # ModalInputViewに初期値を設定する方法を追加する必要がある場合
-            pass
-            
         await interaction.response.send_message(
-            f"🎬 **動画通知メッセージの設定**\n\n現在の設定: `{current_message or 'デフォルト'}`\n\n"
-            f"📝 **使用可能なプレースホルダー:**\n"
-            f"`{{title}}` - 動画タイトル\n"
-            f"`{{url}}` - 動画URL\n"
-            f"`{{author}}` - チャンネル名\n"
-            f"`{{published}}` - 公開日時\n\n"
-            f"下のボタンを押してメッセージを編集してください:",
+            "� **ロールIDを入力**\n\n"
+            "メンションしたいロールのIDを入力してください。\n"
+            "ロールIDの取得方法: 開発者モードを有効にして、ロールを右クリック → 「IDをコピー」",
             view=view,
             ephemeral=True
         )
 
-    @discord.ui.button(label="🔴 ライブ通知メッセージ", style=discord.ButtonStyle.danger, emoji="🔴")
-    async def live_message(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="❌ メンションなし", style=discord.ButtonStyle.secondary, emoji="❌")
+    async def no_mention(self, interaction: discord.Interaction, button: discord.ui.Button):
         if debug:
-            print(f"[DEBUG] live_message button clicked by user={interaction.user.id}")
+            print(f"[DEBUG] no_mention button clicked by user={interaction.user.id}")
         
-        current_message = self.channel_info.get("custom_live_message", "")
-        
-        view = ModalInputView(
-            label="💬 ライブ通知メッセージを設定",
-            modal_title="🔴 ライブ通知メッセージのカスタマイズ",
-            text_label="ライブ通知メッセージ",
-            placeholder="ライブ通知メッセージを入力 | {title} {url} {author} が使用可能",
-            input_style="paragraph",
-            min_length=1,
-            max_length=2000,
-            on_submit=self.save_live_message,
-            ephemeral=True
-        )
-        
-        await interaction.response.send_message(
-            f"🔴 **ライブ通知メッセージの設定**\n\n現在の設定: `{current_message or 'デフォルト'}`\n\n"
-            f"📝 **使用可能なプレースホルダー:**\n"
-            f"`{{title}}` - 配信タイトル\n"
-            f"`{{url}}` - 配信URL\n"
-            f"`{{author}}` - チャンネル名\n\n"
-            f"下のボタンを押してメッセージを編集してください:",
-            view=view,
-            ephemeral=True
-        )
+        await self.save_url_mode_and_finish("", interaction)
 
-    @discord.ui.button(label="🔄 デフォルトに戻す", style=discord.ButtonStyle.secondary, emoji="🔄")
-    async def reset_messages(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if debug:
-            print(f"[DEBUG] reset_messages button clicked by user={interaction.user.id}")
+    async def save_role_mention(self, interaction, value, recipient, view):
+        """ロールメンションを保存してURLモード設定を完了"""
+        # ロールIDの妥当性を簡易チェック
+        try:
+            role_id = int(value.strip())
+            if role_id <= 0:
+                raise ValueError("Invalid role ID")
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ 無効なロールIDです。数値のみを入力してください。",
+                ephemeral=True
+            )
+            return
         
-        # カスタムメッセージを削除してデフォルトに戻す
+        await self.save_url_mode_and_finish(str(role_id), interaction)
+
+    async def save_url_mode_and_finish(self, role_id, interaction):
+        """URLモードとロールメンションを保存"""
+        if debug:
+            print(f"[DEBUG] save_url_mode_and_finish: guild={self.guild_id}, channel={self.channel_id}, role={role_id}")
+        
         channels = get_guild_value(self.guild_id, "youtube_channels", [])
         for i, ch in enumerate(channels):
             if ch.get("channel_id") == self.channel_id:
-                if "custom_video_message" in ch:
-                    del ch["custom_video_message"]
-                if "custom_live_message" in ch:
-                    del ch["custom_live_message"]
+                ch["notification_mode"] = "url"
+                if role_id:
+                    ch["role_mention"] = role_id
+                else:
+                    ch.pop("role_mention", None)
                 channels[i] = ch
                 break
         
         update_guild_data(self.guild_id, "youtube_channels", channels)
         
         embed = discord.Embed(
-            title="✅ デフォルトメッセージに戻しました",
-            description=f"📺 **{self.channel_info.get('channel_name', self.channel_id)}** の通知メッセージをデフォルトに戻しました。",
-            color=0x32CD32  # ライムグリーン
-        )
-        embed.set_footer(text="🔄 メッセージリセット完了", icon_url="https://youtube.com/favicon.ico")
-        
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    async def save_video_message(self, interaction, value, recipient, view):
-        """動画通知メッセージを保存"""
-        if debug:
-            print(f"[DEBUG] save_video_message: guild={self.guild_id}, channel={self.channel_id}, message_length={len(value)}")
-        
-        channels = get_guild_value(self.guild_id, "youtube_channels", [])
-        for i, ch in enumerate(channels):
-            if ch.get("channel_id") == self.channel_id:
-                ch["custom_video_message"] = value
-                channels[i] = ch
-                break
-        
-        update_guild_data(self.guild_id, "youtube_channels", channels)
-        
-        embed = discord.Embed(
-            title="✅ 動画通知メッセージを保存しました",
-            description=f"🎬 **{self.channel_info.get('channel_name', self.channel_id)}** の動画通知メッセージを更新しました。",
+            title="✅ URLモード設定完了",
+            description=f"� **{self.channel_info.get('channel_name', self.channel_id)}** をURLモードに設定しました。",
             color=0x32CD32
         )
+        
+        if role_id:
+            embed.add_field(
+                name="� ロールメンション",
+                value=f"<@&{role_id}> をメンションします。",
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="👥 ロールメンション",
+                value="メンションは設定されていません。",
+                inline=False
+            )
+        
         embed.add_field(
-            name="💬 新しいメッセージ",
-            value=f"```\n{value[:500]}{'...' if len(value) > 500 else ''}\n```",
+            name="🔗 URLモード特徴",
+            value="動画URLのみを送信する軽量形式です。サーバーの負荷を最小限に抑えます。",
             inline=False
         )
-        embed.set_footer(text="🎬 動画メッセージ設定完了", icon_url="https://youtube.com/favicon.ico")
         
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    async def save_live_message(self, interaction, value, recipient, view):
-        """ライブ通知メッセージを保存"""
-        if debug:
-            print(f"[DEBUG] save_live_message: guild={self.guild_id}, channel={self.channel_id}, message_length={len(value)}")
-        
-        channels = get_guild_value(self.guild_id, "youtube_channels", [])
-        for i, ch in enumerate(channels):
-            if ch.get("channel_id") == self.channel_id:
-                ch["custom_live_message"] = value
-                channels[i] = ch
-                break
-        
-        update_guild_data(self.guild_id, "youtube_channels", channels)
-        
-        embed = discord.Embed(
-            title="✅ ライブ通知メッセージを保存しました",
-            description=f"🔴 **{self.channel_info.get('channel_name', self.channel_id)}** のライブ通知メッセージを更新しました。",
-            color=0x32CD32
-        )
-        embed.add_field(
-            name="💬 新しいメッセージ",
-            value=f"```\n{value[:500]}{'...' if len(value) > 500 else ''}\n```",
-            inline=False
-        )
-        embed.set_footer(text="🔴 ライブメッセージ設定完了", icon_url="https://youtube.com/favicon.ico")
+        embed.set_footer(text="� URLモード設定完了", icon_url="https://youtube.com/favicon.ico")
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -1194,6 +1239,20 @@ def migrate_youtube_channels(guild_id):
         expected_was_live = (current_live_status in ["live", "upcoming", "ended"])
         if channel_info.get("was_live") != expected_was_live:
             channel_info["was_live"] = expected_was_live
+            updated = True
+        
+        # 通知モードフィールドの追加（デフォルトはembed）
+        if "notification_mode" not in channel_info:
+            channel_info["notification_mode"] = "embed"  # デフォルト値
+            updated = True
+        
+        # カスタムメッセージ関連フィールドの削除（廃止機能）
+        if "custom_video_message" in channel_info:
+            del channel_info["custom_video_message"]
+            updated = True
+        
+        if "custom_live_message" in channel_info:
+            del channel_info["custom_live_message"]
             updated = True
         
         if updated:
