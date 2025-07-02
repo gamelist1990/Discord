@@ -750,4 +750,4 @@ if __name__ == "__main__":
     try:
         main()
     finally:
-        run_push()
+        sys.exit(0)
