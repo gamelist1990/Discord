@@ -117,7 +117,7 @@
         "channel_name": "こう君！",
         "created_at": "2025-06-26T14:07:52.839578+09:00",
         "interval": 1,
-        "last_check": "2025-07-04T00:55:11.509875+09:00",
+        "last_check": "2025-07-04T01:35:46.111052+09:00",
         "last_live_status": "none",
         "last_live_video_id": null,
         "last_video_id": "oJ90hp6kx9Q",
@@ -125,21 +125,6 @@
         "rss_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCue_c1nQyNwfZa2cLR4fo7g",
         "was_live": false,
         "notification_mode": "embed"
-      },
-      {
-        "channel_id": "UCjJmYy279ehSYSwR1A3fXtA",
-        "channel_name": "マグロヘッド",
-        "rss_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCjJmYy279ehSYSwR1A3fXtA",
-        "notification_channel": 1119320648448213043,
-        "interval": 5,
-        "last_video_id": "_6SwtMJKmdQ",
-        "last_live_video_id": null,
-        "last_live_status": "none",
-        "was_live": false,
-        "notification_mode": "embed",
-        "role_mention": "",
-        "created_at": "2025-07-02T23:27:22.365211+09:00",
-        "last_check": "2025-07-04T00:53:59.688653+09:00"
       }
     ],
     "user_flags": {
