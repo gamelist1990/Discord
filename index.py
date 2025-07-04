@@ -670,6 +670,26 @@ def run_push():
                 print("[ERROR] GITHUB_TOKEN環境変数が必要です。")
                 return
             
+            # --- 直近1時間以内のauto:コミットがあればpushしない ---
+            print(f"[INFO] 直近1時間以内のauto:コミットを確認中...")
+            since_time = (datetime.utcnow() - timedelta(hours=1)).isoformat() + 'Z'
+            commits_url = f"https://api.github.com/repos/{REPO}/commits?path={FILE_PATH}&sha={BRANCH}&since={since_time}"
+            headers = {
+                "Authorization": f"token {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github+json"
+            }
+            r_commits = requests.get(commits_url, headers=headers)
+            if r_commits.status_code == 200:
+                commits = r_commits.json()
+                for commit in commits:
+                    msg = commit.get("commit", {}).get("message", "")
+                    if msg.startswith("auto:"):
+                        print("[INFO] 直近1時間以内にauto:コミットが存在するためpushをスキップします。")
+                        print("✔ ファイル内容は最新の状態です（autoコミット済み）")
+                        return
+            else:
+                print(f"[WARN] コミット履歴の取得に失敗: {r_commits.status_code} {r_commits.text[:200]}")
+            
             # ファイルの存在確認
             if not os.path.exists(FILE_PATH):
                 print(f"[ERROR] ファイル '{FILE_PATH}' が見つかりません。")
