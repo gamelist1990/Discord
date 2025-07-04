@@ -19,7 +19,7 @@ class DShoppingSwitch2Checker(BaseStockChecker):
     MODULE_NAME = "dshopping_switch2"
     PRODUCTS = [
         {
-            "url": "https://dshopping.docomo.ne.jp/products_search?category_uri=1812000000%2F1812005000%2F1812005002&min_price=15000&genre_code=18",
+            "url": "https://dshopping.docomo.ne.jp/products_search?category_uri=1812000000%2F1812005000%2F1812005002&min_price=40000&genre_code=18",
             "key": "switch2_search",
             "image_url": None,  # 商品ごとに取得
         }
