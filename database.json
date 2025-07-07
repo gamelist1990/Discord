@@ -117,7 +117,7 @@
         "channel_name": "こう君！",
         "created_at": "2025-06-26T14:07:52.839578+09:00",
         "interval": 1,
-        "last_check": "2025-07-05T10:07:44.768778+09:00",
+        "last_check": "2025-07-08T03:48:48.499980+09:00",
         "last_live_status": "none",
         "last_live_video_id": null,
         "last_video_id": "oJ90hp6kx9Q",
@@ -132,13 +132,13 @@
         "rss_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCjJmYy279ehSYSwR1A3fXtA",
         "notification_channel": 1119320648448213043,
         "interval": 5,
-        "last_video_id": "6O0YfOR5Ark",
+        "last_video_id": "gqbhed9ZCmY",
         "last_live_video_id": null,
         "last_live_status": "none",
         "was_live": false,
         "notification_mode": "url",
         "created_at": "2025-07-02T23:27:22.365211+09:00",
-        "last_check": "2025-07-05T10:05:43.229788+09:00"
+        "last_check": "2025-07-08T03:44:45.058737+09:00"
       }
     ],
     "user_flags": {
@@ -178,6 +178,19 @@
             "message_id": 1388728849067540521,
             "timestamp": 1751169161.234266,
             "type": "text"
+          }
+        ]
+      },
+      "1324197102343159861": {
+        "flags": 1,
+        "last_decay": 1751721577.214606,
+        "violations": [
+          {
+            "type": "text",
+            "timestamp": 1751721577.214619,
+            "flags_added": 1,
+            "channel_id": 1148749910825504888,
+            "message_id": 1391045849777176819
           }
         ]
       }
