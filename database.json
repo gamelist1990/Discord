@@ -123,7 +123,7 @@
         "channel_name": "こう君！",
         "created_at": "2025-06-26T14:07:52.839578+09:00",
         "interval": 1,
-        "last_check": "2025-07-08T16:11:18.467791+09:00",
+        "last_check": "2025-07-08T16:52:52.230760+09:00",
         "last_live_status": "none",
         "last_live_video_id": null,
         "last_video_id": "oJ90hp6kx9Q",
@@ -144,7 +144,7 @@
         "was_live": false,
         "notification_mode": "url",
         "created_at": "2025-07-02T23:27:22.365211+09:00",
-        "last_check": "2025-07-08T16:09:42.258823+09:00"
+        "last_check": "2025-07-08T16:51:38.547924+09:00"
       }
     ],
     "user_flags": {

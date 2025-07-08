@@ -15,7 +15,13 @@ def register_command(
     op_level: 必要なopレベル（0=全員, 1=ロール, 2=Staff, 3=ギルド管理者, 4=グローバル管理者）
     """
     original_callback = command.callback
-    async def wrapped_callback(ctx: Context, *args, **kwargs):
+    async def wrapped_callback(*args, **kwargs):
+        # ctxは関数型ならargs[0]、メソッド型ならargs[1]
+        if len(args) == 0:
+            raise RuntimeError("コマンドコールバックにctxが渡されていません")
+        ctx = args[0] if isinstance(args[0], Context) else args[1] if len(args) > 1 and isinstance(args[1], Context) else None
+        if ctx is None:
+            raise RuntimeError("ctxが見つかりません")
         member = ctx.author
         if not isinstance(member, discord.Member):
             await ctx.send("❌ このコマンドはサーバー内でのみ使用できます。")
@@ -23,7 +29,7 @@ def register_command(
         if not has_op(member, op_level):
             await ctx.send("❌ 権限がありません。")
             return
-        await original_callback(ctx, *args, **kwargs)
+        await original_callback(*args, **kwargs)
 
     command.callback = wrapped_callback
     bot.add_command(command)
