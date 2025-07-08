@@ -3,6 +3,8 @@ import index  # is_adminを利用
 import discord
 from discord.ext import commands
 import re
+from plugins import register_command
+from lib.op import OP_GUILD_ADMIN
 
 class SlowmodePlugin:
     """
@@ -262,20 +264,17 @@ class SlowmodePlugin:
 def setup(bot):
     """プラグインの初期化"""
     slowmode_plugin = SlowmodePlugin(bot)
-      # discord.pyのcommandとして登録
-    @bot.command(name='slowmode', help='チャンネルのslowmode設定を管理します')
+    @commands.command(name='slowmode', help='チャンネルのslowmode設定を管理します')
     async def slowmode_command(ctx, *, duration: str = ""):
         """
         Slowmodeコマンド - discord.pyのコマンドシステム経由
         """
-        # コマンド内容を再構築（既存の関数との互換性のため）
         if duration:
             ctx.message.content = f"#slowmode {duration}"
         else:
             ctx.message.content = "#slowmode"
-        
         await slowmode_plugin.handle_slowmode_command(ctx.message)
-    
+    register_command(bot, slowmode_command, op_level=OP_GUILD_ADMIN)
 
 # 互換性のため
 slowmode_plugin_instance = None

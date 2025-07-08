@@ -1,5 +1,6 @@
 import discord
 from plugins import registerSlashCommand
+from lib.op import OP_EVERYONE
 import utils
 from datetime import datetime
 
@@ -63,7 +64,7 @@ def setup(bot):
         )
         
         embed.add_field(
-            name="� 起動時刻",
+            name="⏰ 起動時刻",
             value=f"{absolute_timestamp}\n{relative_timestamp}",
             inline=False
         )
@@ -86,5 +87,6 @@ def setup(bot):
         bot,
         "uptime",
         "Botの現在の稼働時間を表示します。",
-        uptime_callback
+        uptime_callback,
+        op_level=OP_EVERYONE
     )

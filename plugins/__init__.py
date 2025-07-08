@@ -1,23 +1,31 @@
-from typing import Optional, Callable, Awaitable
+from typing import Callable, Awaitable
 from discord.ext.commands import Bot, Command
 import discord
 from index import registerSlashCommand as _registerSlashCommand
+from lib.op import has_op, OP_EVERYONE, OP_HAS_ROLE, OP_STAFF, OP_GUILD_ADMIN, OP_GLOBAL_ADMIN
 
 def register_command(
     bot: Bot,
     command: Command,
-    aliases: Optional[list[str]] = None,
-    admin: bool = False
+    op_level: int = OP_EVERYONE
 ) -> None:
     """
     外部プラグイン/モジュールからも呼び出せるようにグローバルに公開。
     command: discord.ext.commands.Command オブジェクト
-    aliases: list[str] または None
-    admin: bool（管理者専用コマンドかどうか）
+    op_level: 必要なopレベル（0=全員, 1=ロール, 2=Staff, 3=ギルド管理者, 4=グローバル管理者）
     """
     bot.add_command(command)
-    # alias機能は廃止（何もしない）
-    setattr(command, "admin", admin)
+    setattr(command, "op_level", op_level)
 
 
-registerSlashCommand = _registerSlashCommand
+def registerSlashCommand(bot, name, description, callback, parameters=None, op_level=OP_EVERYONE):
+    """
+    スラッシュコマンドを動的に登録する関数。
+    op_level: 必要なopレベル（0=全員, 1=ロール, 2=Staff, 3=ギルド管理者, 4=グローバル管理者）
+    """
+    def wrapped_callback(interaction, *args, **kwargs):
+        member = interaction.user if hasattr(interaction, "user") else None
+        if member and not has_op(member, op_level):
+            return interaction.response.send_message("❌ 権限がありません。", ephemeral=True)
+        return callback(interaction, *args, **kwargs)
+    return _registerSlashCommand(bot, name, description, wrapped_callback, parameters)

@@ -4,6 +4,7 @@ import asyncio
 from discord import Embed, ButtonStyle, Interaction, SelectOption
 from discord.ui import View, Button, Select, Modal, TextInput
 from plugins import register_command
+from lib.op import OP_GUILD_ADMIN
 from index import load_config, is_admin
 from datetime import datetime
 
@@ -346,4 +347,4 @@ def setup(bot):
         except:
             pass
 
-    register_command(bot, edit, aliases=None, admin=True)
+    register_command(bot, edit, op_level=OP_GUILD_ADMIN)

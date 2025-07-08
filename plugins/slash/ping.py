@@ -1,5 +1,6 @@
 import discord
 from plugins import registerSlashCommand
+from lib.op import OP_EVERYONE
 
 
 def setup(bot):
@@ -13,6 +14,6 @@ def setup(bot):
         embed.set_footer(text=f"サーバー: {interaction.guild.name if interaction.guild else 'DM'} | 実行者: {interaction.user.display_name}")
         await interaction.response.send_message(embed=embed, ephemeral=True)
         
-    registerSlashCommand(bot, "ping", "Botの応答速度を表示します。", ping_callback)
+    registerSlashCommand(bot, "ping", "Botの応答速度を表示します。", ping_callback, op_level=OP_EVERYONE)
 
-   
+

@@ -3,6 +3,7 @@ import discord
 from discord import Embed, ButtonStyle, Interaction
 from discord.ui import View, Button
 from plugins import register_command
+from lib.op import OP_GUILD_ADMIN
 from index import load_config, is_admin
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -285,4 +286,4 @@ def setup(bot):
         task = asyncio.create_task(do_clear())
         clear_tasks[guild_id] = task
 
-    register_command(bot, clear, aliases=None, admin=True)
+    register_command(bot, clear, op_level=OP_GUILD_ADMIN)

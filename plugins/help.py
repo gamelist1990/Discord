@@ -2,6 +2,7 @@ from discord import Embed, Interaction, ButtonStyle
 from discord.ui import View, Button
 from discord.ext import commands
 from plugins import register_command
+from lib.op import OP_EVERYONE
 
 class HelpPageView(View):
     def __init__(self, ctx, cmds, per_page=3):
@@ -109,4 +110,4 @@ def setup(bot):
         view = HelpPageView(ctx, cmds, per_page=3)
         embed = view.get_embed()
         await ctx.send(embed=embed, view=view)
-    register_command(bot, help, aliases=['h'], admin=False)
+    register_command(bot, help, op_level=OP_EVERYONE)

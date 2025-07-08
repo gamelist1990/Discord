@@ -1,5 +1,6 @@
 import discord
 from plugins import registerSlashCommand
+from lib.op import OP_EVERYONE
 
 
 def setup(bot):
@@ -49,5 +50,6 @@ def setup(bot):
         bot,
         "help",
         "利用可能なスラッシュコマンド一覧を表示します。",
-        help_callback
+        help_callback,
+        op_level=OP_EVERYONE
     )

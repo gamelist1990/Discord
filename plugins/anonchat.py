@@ -1,6 +1,7 @@
 from discord.ext import commands
 import discord
 from plugins import register_command
+from lib.op import OP_EVERYONE
 from plugins.common_ui import ModalInputView
 
 # 匿名チャットプラグイン
@@ -102,4 +103,4 @@ def setup(bot):
             auto_delete_on_button=True
         )
         await ctx.send(embed=embed, view=view)
-    register_command(bot, tell, aliases=None, admin=False)
+    register_command(bot, tell, op_level=OP_EVERYONE)

@@ -29,8 +29,8 @@ class FlagSystem:
         "actions": []  
     }
     
-    # ユーザーのフラグデータ: {guild_id: {user_id: {"flags": int, "last_decay": timestamp, "violations": []}}}
-    _user_flags: Dict[int, Dict[int, Dict]] = {}
+    # ユーザーのフラグデータ: {guild_id: {user_id: [{"flags": int, "last_decay": timestamp, "violations": []}]}}
+    _user_flags: Dict[int, Dict[int, List[Dict]]] = {}
     
     @classmethod
     async def get_flag_config(cls, guild) -> Dict:
@@ -79,27 +79,29 @@ class FlagSystem:
         existing_flags = data.get("user_flags", {})
         # ユーザーごとにマージ
         merged_flags = existing_flags.copy()
-        for user_id, new_flag in user_flags.items():
-            if user_id in merged_flags and isinstance(merged_flags[user_id], dict) and isinstance(new_flag, dict):
-                # violationsリストは結合し重複を除去
-                old_violations = merged_flags[user_id].get("violations", [])
-                new_violations = new_flag.get("violations", [])
-                # message_idで重複除去
-                seen = set()
-                merged_violations = []
-                for v in old_violations + new_violations:
-                    mid = v.get("message_id")
-                    if mid is None or mid not in seen:
-                        merged_violations.append(v)
-                        if mid is not None:
-                            seen.add(mid)
-                merged_flags[user_id] = {
-                    **merged_flags[user_id],
-                    **new_flag,
-                    "violations": merged_violations
-                }
+        for user_id, new_flag_list in user_flags.items():
+            if user_id in merged_flags and isinstance(merged_flags[user_id], list) and isinstance(new_flag_list, list):
+                # 各フラグ情報をマージ
+                for new_flag in new_flag_list:
+                    # violationsリストは結合し重複を除去
+                    old_flag = next((f for f in merged_flags[user_id] if f.get("type") == new_flag.get("type")), None)
+                    if old_flag:
+                        old_violations = old_flag.get("violations", [])
+                        new_violations = new_flag.get("violations", [])
+                        # message_idで重複除去
+                        seen = set()
+                        merged_violations = []
+                        for v in old_violations + new_violations:
+                            mid = v.get("message_id")
+                            if mid is None or mid not in seen:
+                                merged_violations.append(v)
+                                if mid is not None:
+                                    seen.add(mid)
+                        old_flag["violations"] = merged_violations
+                    else:
+                        merged_flags[user_id].append(new_flag)
             else:
-                merged_flags[user_id] = new_flag
+                merged_flags[user_id] = new_flag_list
         data["user_flags"] = merged_flags
         set_guild_data(guild_id, data)
 
@@ -138,32 +140,32 @@ class FlagSystem:
         
         # ユーザーデータを初期化
         if user_id not in cls._user_flags[guild_id]:
-            cls._user_flags[guild_id][user_id] = {
-                "flags": 0,
-                "last_decay": datetime.now().timestamp(),
-                "violations": []
-            }
-        user_data = cls._user_flags[guild_id][user_id]
+            cls._user_flags[guild_id][user_id] = []
+        
+        user_flags = cls._user_flags[guild_id][user_id]
         
         # フラグの自動減衰処理
-        await cls._apply_flag_decay(user_data, config)
+        for user_data in user_flags:
+            await cls._apply_flag_decay(user_data, config)
         
         # フラグを追加
         flag_weight = config["flag_weights"].get(alert_type, 1)
-        user_data["flags"] += flag_weight
-        user_data["violations"].append({
+        new_flag = {
             "type": alert_type,
             "timestamp": datetime.now().timestamp(),
             "flags_added": flag_weight,
             "channel_id": message.channel.id,
-            "message_id": message.id
-        })
+            "message_id": message.id,
+            "violations": []  # 新しいフラグには空のviolationsリストを追加
+        }
+        user_flags.append(new_flag)
+        
         # DBに保存
         cls._save_user_flags_to_db(guild_id, cls._user_flags[guild_id])
-        print(f"[FlagSystem] User {user_id} in guild {guild_id}: +{flag_weight} flags ({alert_type}), total: {user_data['flags']}")
+        print(f"[FlagSystem] User {user_id} in guild {guild_id}: +{flag_weight} flags ({alert_type}), total: {sum(f['flags_added'] for f in user_flags)}")
         
         # アクションを実行
-        return await cls._execute_action(message, user_data["flags"], config)
+        return await cls._execute_action(message, sum(f['flags_added'] for f in user_flags), config)
     
     @classmethod
     async def _apply_flag_decay(cls, user_data: Dict, config: Dict):
@@ -275,17 +277,18 @@ class FlagSystem:
         if guild_id not in cls._user_flags or user_id not in cls._user_flags[guild_id]:
             return {"flags": 0, "violations": []}
         
-        user_data = cls._user_flags[guild_id][user_id]
+        user_flags = cls._user_flags[guild_id][user_id]
         config = await cls.get_flag_config(guild)
         
         # 減衰を適用
-        await cls._apply_flag_decay(user_data, config)
+        for user_data in user_flags:
+            await cls._apply_flag_decay(user_data, config)
         # DBに保存（減衰反映）
         cls._save_user_flags_to_db(guild_id, cls._user_flags[guild_id])
         
         return {
-            "flags": user_data["flags"],
-            "violations": user_data["violations"][-10:]  # 最新10件のみ
+            "flags": sum(f["flags_added"] for f in user_flags),
+            "violations": [v for f in user_flags for v in f["violations"]][-10:]  # 最新10件のみ
         }
     
     @classmethod
@@ -294,11 +297,7 @@ class FlagSystem:
         guild_id = guild.id
         cls._ensure_user_flags_loaded(guild_id)
         if guild_id in cls._user_flags and user_id in cls._user_flags[guild_id]:
-            cls._user_flags[guild_id][user_id] = {
-                "flags": 0,
-                "last_decay": datetime.now().timestamp(),
-                "violations": []
-            }
+            cls._user_flags[guild_id][user_id] = []
             cls._save_user_flags_to_db(guild_id, cls._user_flags[guild_id])
             return True
         return False
@@ -314,15 +313,17 @@ class FlagSystem:
         config = await cls.get_flag_config(guild)
         users_with_flags = []
         
-        for user_id, user_data in cls._user_flags[guild_id].items():
+        for user_id, user_flags in cls._user_flags[guild_id].items():
             # 減衰を適用
-            await cls._apply_flag_decay(user_data, config)
+            for user_data in user_flags:
+                await cls._apply_flag_decay(user_data, config)
             
-            if user_data["flags"] > 0:
+            total_flags = sum(f["flags_added"] for f in user_flags)
+            if total_flags > 0:
                 users_with_flags.append({
                     "user_id": user_id,
-                    "flags": user_data["flags"],
-                    "violations": len(user_data["violations"])
+                    "flags": total_flags,
+                    "violations": sum(len(f["violations"]) for f in user_flags)
                 })
         
         # DBに保存（減衰反映）

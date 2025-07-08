@@ -2,6 +2,7 @@ import discord
 import typing
 from discord import app_commands
 from plugins import registerSlashCommand
+from lib.op import OP_EVERYONE
 from plugins.antiModule.flag_system import FlagSystem
 from plugins.antiModule.types import DetectionTypeManager
 from typing import Optional
@@ -146,7 +147,8 @@ def setup(bot):
             "description": "フラグ情報を確認したいユーザー（省略した場合は自分自身）",
             "type": discord.Member,
             "required": False
-        }]
+        }],
+        op_level=OP_EVERYONE
     )
 
 

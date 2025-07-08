@@ -27,13 +27,7 @@ import requests
 from DataBase import start_api_key_cleanup_loop
 import utils
 
-# APIサーバー統合用import
-try:
-    import server as api_manager_module
-    API_MANAGER_AVAILABLE = True
-except ImportError:
-    API_MANAGER_AVAILABLE = False
-    print("⚠️ server.py が見つかりません。API管理機能は無効です。")
+# APIサーバー統合用import（不要なAPIマネージャ関連を削除）
 
 CONFIG_FILE_NAME = "config.json"
 EULA_TEXT = """
@@ -60,9 +54,6 @@ bot_start_time = None
 server_count = 0
 bot_status = "Starting..."
 
-# API管理機能
-api_manager = None
-api_manager_enabled = False
 
 async def update_isBot_periodically():
     global isBot, last_isBot_update, bot_instance, isBot_patch
@@ -94,13 +85,12 @@ isBot_patch = None
 @app.route("/")
 def dashboard():
     return render_template("index.html")
+
 def registerFlask(app, bot_instance):
     """
     Flask拡張APIの登録を一元化する関数。
     必要なAPI登録関数をここでまとめて呼び出す。
     """
-    global api_manager, api_manager_enabled
-    
     # API エンドポイントを登録
     try:
         import api
@@ -110,17 +100,6 @@ def registerFlask(app, bot_instance):
         print("✔ APIエンドポイントを登録しました")
     except Exception as e:
         print(f"❌ APIエンドポイント登録エラー: {e}")
-    
-    # API管理機能を初期化
-    if API_MANAGER_AVAILABLE:
-        try:
-            import server as api_manager_module
-            api_manager = api_manager_module.integrate_with_flask_app(app)
-            api_manager_enabled = True
-            print("✔ API管理機能を有効化しました")
-        except Exception as e:
-            print(f"❌ API管理機能の初期化に失敗: {e}")
-            api_manager_enabled = False
 
 
 def run_flask():

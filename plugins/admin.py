@@ -1,5 +1,6 @@
 from discord.ext import commands
 from plugins import register_command
+from lib.op import OP_GUILD_ADMIN
 from index import save_config, load_config
 
 # サーバー管理者をguildAdminsに追加するコマンド
@@ -46,4 +47,4 @@ def setup(bot):
         embed.set_footer(text=f"合計: {len(admin_ids)}名")
         await ctx.send(embed=embed)
 
-    register_command(bot, admin, aliases=None, admin=True)
+    register_command(bot, admin, op_level=OP_GUILD_ADMIN)

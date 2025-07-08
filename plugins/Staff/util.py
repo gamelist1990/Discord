@@ -1,5 +1,5 @@
-from index import is_admin, load_config
 import discord
+from lib.op import get_op_level, OP_STAFF, OP_GUILD_ADMIN, OP_GLOBAL_ADMIN
 
 class StaffUtil:
     def __init__(self, ctx):
@@ -18,12 +18,12 @@ class StaffUtil:
         return self._role
 
     async def is_admin_user(self):
-        config = load_config()
-        return is_admin(self.ctx.author.id, self.guild.id, config)
+        op = await get_op_level(self.ctx.author)
+        return op >= OP_GUILD_ADMIN
 
     async def is_staff(self):
-        role = self.get_staff_role()
-        return bool(role and role in self.ctx.author.roles)
+        op = await get_op_level(self.ctx.author)
+        return op >= OP_STAFF
 
     def get_staff_members(self):
         role = self.get_staff_role()

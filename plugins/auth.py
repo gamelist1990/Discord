@@ -7,6 +7,7 @@ from DataBase import save_api_key, get_api_key, delete_api_key
 import discord
 from discord.ui import View
 from plugins.common_ui import ModalInputView
+from lib.op import OP_GUILD_ADMIN
 
 # 一時APIキー発行コマンド
 
@@ -111,4 +112,4 @@ def setup(bot):
             else:
                 left = info["expire"] - now
                 await ctx.send(f"✅ 有効なAPIキーです。\n残り: {left.seconds//60}分{left.seconds%60}秒")
-    register_command(bot, auth, aliases=None, admin=True)
+    register_command(bot, auth, op_level=OP_GUILD_ADMIN)

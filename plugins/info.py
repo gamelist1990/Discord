@@ -7,10 +7,11 @@ from plugins import register_command
 from DataBase import get_guild_value, update_guild_data
 from plugins.common_ui import ModalInputView
 from lib.youtubeRSS import YoutubeRssApi, YoutubeLiveStatus, YoutubeVideoType
+from lib.op import OP_GUILD_ADMIN
 
 
 # --- デバッグ用フラグ ---
-debug = True  # 問題解決のためデバッグを有効化
+debug = False  # 問題解決のためデバッグを有効化
 
 # --- JSTタイムゾーン定義 ---
 JST = timezone(timedelta(hours=9))
@@ -1319,8 +1320,7 @@ def setup(bot):
     register_command(
         bot,
         info,
-        aliases=None,
-        admin=False
+        op_level=OP_GUILD_ADMIN  # ギルド管理者以上のみ利用可
     )
     if not hasattr(bot, '_video_notification_handler'):
         handler = VideoNotificationHandler(bot)
