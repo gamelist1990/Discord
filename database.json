@@ -123,7 +123,7 @@
         "channel_name": "こう君！",
         "created_at": "2025-06-26T14:07:52.839578+09:00",
         "interval": 1,
-        "last_check": "2025-07-08T14:12:25.575884+09:00",
+        "last_check": "2025-07-08T15:22:06.602907+09:00",
         "last_live_status": "none",
         "last_live_video_id": null,
         "last_video_id": "oJ90hp6kx9Q",
@@ -144,23 +144,20 @@
         "was_live": false,
         "notification_mode": "url",
         "created_at": "2025-07-02T23:27:22.365211+09:00",
-        "last_check": "2025-07-08T14:13:06.659847+09:00"
+        "last_check": "2025-07-08T15:19:33.995185+09:00"
       }
     ],
     "user_flags": {
-      "1371278226399428608": {
-        "flags": 1,
-        "last_decay": 1750932152.819268,
-        "violations": [
-          {
-            "channel_id": 1296388012552355852,
-            "flags_added": 1,
-            "message_id": 1387734763217092659,
-            "timestamp": 1750932152.819283,
-            "type": "text"
-          }
-        ]
-      },
+      "1371278226399428608": [
+        {
+          "type": "text",
+          "timestamp": 1751949867.830549,
+          "flags_added": 1,
+          "channel_id": 1359115472242610217,
+          "message_id": 1392003369287155772,
+          "violations": []
+        }
+      ],
       "1386167352747622521": {
         "flags": 2,
         "last_decay": 1751006238.802845,
@@ -186,17 +183,7 @@
             "message_id": 1391045849777176819
           }
         ]
-      },
-      "1371278226399428608": [
-        {
-          "type": "text",
-          "timestamp": 1751949867.830549,
-          "flags_added": 1,
-          "channel_id": 1359115472242610217,
-          "message_id": 1392003369287155772,
-          "violations": []
-        }
-      ]
+      }
     },
     "private_chats": {
       "1391991435103961160": {
