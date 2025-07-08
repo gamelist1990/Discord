@@ -117,7 +117,7 @@
         "channel_name": "こう君！",
         "created_at": "2025-06-26T14:07:52.839578+09:00",
         "interval": 1,
-        "last_check": "2025-07-08T12:48:20.029295+09:00",
+        "last_check": "2025-07-08T12:52:28.210314+09:00",
         "last_live_status": "none",
         "last_live_video_id": null,
         "last_video_id": "oJ90hp6kx9Q",
@@ -138,7 +138,7 @@
         "was_live": false,
         "notification_mode": "url",
         "created_at": "2025-07-02T23:27:22.365211+09:00",
-        "last_check": "2025-07-08T12:46:35.595537+09:00"
+        "last_check": "2025-07-08T12:51:27.102523+09:00"
       }
     ],
     "user_flags": {
@@ -168,36 +168,20 @@
           }
         ]
       },
-      "1324197102343159861": [
-        {
-          "flags": 1,
-          "last_decay": 1751169161.234255,
-          "violations": [
-            {
-              "channel_id": 1148749910825504888,
-              "flags_added": 1,
-              "message_id": 1388728849067540521,
-              "timestamp": 1751169161.234266,
-              "type": "text"
-            }
-          ]
-        },
-        {
-          "flags": 1,
-          "last_decay": 1751721577.214606,
-          "violations": [
-            {
-              "type": "text",
-              "timestamp": 1751721577.214619,
-              "flags_added": 1,
-              "channel_id": 1148749910825504888,
-              "message_id": 1391045849777176819
-            }
-          ]
-        }
-      ]
-    },
-    "private_chats": {}
+      "1324197102343159861": {
+        "flags": 1,
+        "last_decay": 1751721577.214606,
+        "violations": [
+          {
+            "type": "text",
+            "timestamp": 1751721577.214619,
+            "flags_added": 1,
+            "channel_id": 1148749910825504888,
+            "message_id": 1391045849777176819
+          }
+        ]
+      }
+    }
   },
   "1130057359390150676": {
     "AntiCheat": {
