@@ -1,5 +1,5 @@
 from typing import Callable, Awaitable
-from discord.ext.commands import Bot, Command
+from discord.ext.commands import Bot, Command, Context
 import discord
 from index import registerSlashCommand as _registerSlashCommand
 from lib.op import has_op, OP_EVERYONE, OP_HAS_ROLE, OP_STAFF, OP_GUILD_ADMIN, OP_GLOBAL_ADMIN
@@ -14,6 +14,14 @@ def register_command(
     command: discord.ext.commands.Command オブジェクト
     op_level: 必要なopレベル（0=全員, 1=ロール, 2=Staff, 3=ギルド管理者, 4=グローバル管理者）
     """
+    async def wrapped_callback(ctx: Context, *args, **kwargs):
+        member = ctx.author
+        if not has_op(member, op_level):
+            await ctx.send("❌ 権限がありません。")
+            return
+        await command.callback(ctx, *args, **kwargs)
+
+    command.callback = wrapped_callback
     bot.add_command(command)
     setattr(command, "op_level", op_level)
 
