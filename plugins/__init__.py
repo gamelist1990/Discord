@@ -14,12 +14,16 @@ def register_command(
     command: discord.ext.commands.Command オブジェクト
     op_level: 必要なopレベル（0=全員, 1=ロール, 2=Staff, 3=ギルド管理者, 4=グローバル管理者）
     """
+    original_callback = command.callback
     async def wrapped_callback(ctx: Context, *args, **kwargs):
         member = ctx.author
+        if not isinstance(member, discord.Member):
+            await ctx.send("❌ このコマンドはサーバー内でのみ使用できます。")
+            return
         if not has_op(member, op_level):
             await ctx.send("❌ 権限がありません。")
             return
-        await command.callback(ctx, *args, **kwargs)
+        await original_callback(ctx, *args, **kwargs)
 
     command.callback = wrapped_callback
     bot.add_command(command)
