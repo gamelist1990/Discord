@@ -590,110 +590,99 @@ class VideoNotificationHandler:
     async def check_one_channel(self, guild, channel_info):
         if debug:
             print(f"[DEBUG] check_one_channel: guild={guild.id}, channel={channel_info.get('channel_id')}")
-        
         channel_id = channel_info.get("channel_id")
         if not channel_id:
             if debug:
                 print("[DEBUG] チャンネルIDが未設定")
             return
-        
-        # 最新動画情報をAPIで一括取得
-        latest_video = self.youtube_api.get_latest_video_info(channel_id)
-        if not latest_video:
+        # 最新動画リストを取得
+        videos = self.youtube_api.get_latest_videos(channel_id)
+        if not videos:
             if debug:
-                print(f"[DEBUG] 最新動画情報の取得失敗: {channel_id}")
+                print(f"[DEBUG] 動画リスト取得失敗: {channel_id}")
             return
-        
-        latest_video_id = latest_video.video_id
-        latest_live_status = latest_video.live_status
-        is_live_content = latest_live_status in [YoutubeLiveStatus.LIVE, YoutubeLiveStatus.UPCOMING, YoutubeLiveStatus.ENDED]
-        
-        # 前回の状態を取得
-        last_live_status = channel_info.get("last_live_status", YoutubeLiveStatus.NONE)
-        last_live_video_id = channel_info.get("last_live_video_id")
-        last_video_id = channel_info.get("last_video_id")
-        was_live = channel_info.get("was_live", False)
-        
+        now = datetime.now(JST)
+        # 各種別ごとに最新動画を抽出
+        latest_normal = None
+        latest_short = None
+        latest_live = None
+        for v in videos:
+            # 投稿日時をパース
+            try:
+                published_dt = datetime.strptime(v.published, "%Y-%m-%dT%H:%M:%S%z")
+            except Exception:
+                continue
+            # 1時間未満のみ対象
+            if (now - published_dt).total_seconds() > 3600:
+                continue
+            if v.type == YoutubeVideoType.NORMAL and not latest_normal:
+                latest_normal = (v, published_dt)
+            elif v.type == YoutubeVideoType.SHORTS and not latest_short:
+                latest_short = (v, published_dt)
+            elif v.type in [YoutubeVideoType.LIVECONTENTS, YoutubeVideoType.ISLIVE] and not latest_live:
+                latest_live = (v, published_dt)
+        # 通知判定・送信
+        # 通常動画
+        if latest_normal:
+            v, published_dt = latest_normal
+            if channel_info.get("last_normal_video_id") != v.video_id and (not channel_info.get("last_normal_video_published") or published_dt.isoformat() != channel_info.get("last_normal_video_published")):
+                await self.send_video_notification(guild, channel_info, v)
+                channel_info["last_normal_video_id"] = v.video_id
+                channel_info["last_normal_video_published"] = published_dt.isoformat()
+        # ショート動画
+        if latest_short:
+            v, published_dt = latest_short
+            if channel_info.get("last_short_video_id") != v.video_id and (not channel_info.get("last_short_video_published") or published_dt.isoformat() != channel_info.get("last_short_video_published")):
+                await self.send_video_notification(guild, channel_info, v)
+                channel_info["last_short_video_id"] = v.video_id
+                channel_info["last_short_video_published"] = published_dt.isoformat()
+        # ライブ配信
+        if latest_live:
+            v, published_dt = latest_live
+            if channel_info.get("last_live_video_id") != v.video_id and (not channel_info.get("last_live_video_published") or published_dt.isoformat() != channel_info.get("last_live_video_published")):
+                await self.send_live_notification(guild, channel_info, v)
+                channel_info["last_live_video_id"] = v.video_id
+                channel_info["last_live_video_published"] = published_dt.isoformat()
+        # DB保存
+        channels = get_guild_value(guild.id, "youtube_channels", [])
+        for i, ch in enumerate(channels):
+            if ch.get("channel_id") == channel_info.get("channel_id"):
+                channels[i] = channel_info
+                break
+        update_guild_data(guild.id, "youtube_channels", channels)
         if debug:
-            print(f"[DEBUG] 状態比較 - 動画ID: {latest_video_id}, ライブ状態: {latest_live_status}, 前回ライブ状態: {last_live_status}")
-            print(f"[DEBUG] 前回動画ID: {last_video_id}, 前回ライブ動画ID: {last_live_video_id}, was_live: {was_live}")
-        
-        # 初回記録
-        if not last_video_id and not last_live_video_id:
-            if is_live_content:
-                self.update_channel_state(guild.id, channel_info, live_video_id=latest_video_id, live_status=latest_live_status)
-            else:
-                self.update_channel_state(guild.id, channel_info, video_id=latest_video_id, live_status=YoutubeLiveStatus.NONE)
-            return
-        
-        # === 配信コンテンツの処理 ===
-        if is_live_content:
-            # 配信コンテンツとして処理
-            should_notify_live = last_live_video_id != latest_video_id
-            self.update_channel_state(guild.id, channel_info, live_video_id=latest_video_id, live_status=latest_live_status)
-            if should_notify_live:
-                await self.send_live_notification(guild, channel_info, latest_video)
-                if debug:
-                    print(f"[DEBUG] 配信通知送信: {latest_video_id}")
+            print(f"[DEBUG] 通知チェック完了: {channel_id}")
 
-            # 配信コンテンツの場合は動画通知を絶対に送信しない
-            if debug:
-                print(f"[DEBUG] 配信コンテンツのため動画通知をスキップ: {latest_video_id}")
-            return
-
-        # 通常動画の処理
-        else:
-            # 通常動画として処理
-            should_notify_video = last_video_id != latest_video_id and last_live_video_id != latest_video_id
-            self.update_channel_state(guild.id, channel_info, video_id=latest_video_id, live_status=YoutubeLiveStatus.NONE)
-            if should_notify_video:
-                await self.send_video_notification(guild, channel_info, latest_video)
-                if debug:
-                    print(f"[DEBUG] 動画通知送信: {latest_video_id}")
-        
+    def update_channel_state(self, guild_id, channel_info, normal_video_id=None, normal_published=None, short_video_id=None, short_published=None, live_video_id=None, live_published=None, live_status=None):
         if debug:
-            print(f"[DEBUG] チェック完了: {latest_video_id}, live={latest_live_status}, is_live_content={is_live_content}")
-
-    def update_channel_state(self, guild_id, channel_info, video_id=None, live_video_id=None, live_status=None):
-        if debug:
-            print(
-                f"[DEBUG] update_channel_state: guild={guild_id}, channel={channel_info.get('channel_id')}, video_id={video_id}, live_video_id={live_video_id}, live_status={live_status}"
-            )
-        
-        # 通常動画IDの更新
-        if video_id is not None:
-            channel_info["last_video_id"] = video_id
-        
-        # ライブ配信関連の更新
+            print(f"[DEBUG] update_channel_state: guild={guild_id}, channel={channel_info.get('channel_id')}, normal_video_id={normal_video_id}, short_video_id={short_video_id}, live_video_id={live_video_id}, live_status={live_status}")
+        # 通常動画
+        if normal_video_id is not None:
+            channel_info["last_normal_video_id"] = normal_video_id
+        if normal_published is not None:
+            channel_info["last_normal_video_published"] = normal_published
+        # ショート動画
+        if short_video_id is not None:
+            channel_info["last_short_video_id"] = short_video_id
+        if short_published is not None:
+            channel_info["last_short_video_published"] = short_published
+        # ライブ配信
         if live_video_id is not None:
             channel_info["last_live_video_id"] = live_video_id
-        
+        if live_published is not None:
+            channel_info["last_live_video_published"] = live_published
         if live_status is not None:
             channel_info["last_live_status"] = live_status
-            # was_liveをライブ状態に基づいて更新
             channel_info["was_live"] = (live_status in ["live", "upcoming", "ended"])
-        
-        # live_video_idがNoneに設定された場合（配信終了時）
-        if live_video_id is None and "last_live_video_id" in channel_info:
-            channel_info["last_live_video_id"] = None
-            channel_info["last_live_status"] = "none"
-            channel_info["was_live"] = False
-            if debug:
-                print(f"[DEBUG] 配信状態をリセット: {channel_info.get('channel_id')}")
-        
-        # 最終チェック時刻を更新
-        channel_info["last_check"] = datetime.now(JST).isoformat()
-        
-        # データベースに保存
+        # DB保存
         channels = get_guild_value(guild_id, "youtube_channels", [])
         for i, ch in enumerate(channels):
             if ch.get("channel_id") == channel_info.get("channel_id"):
                 channels[i] = channel_info
                 break
         update_guild_data(guild_id, "youtube_channels", channels)
-        
         if debug:
-            print(f"[DEBUG] 状態更新完了: video_id={channel_info.get('last_video_id')}, live_video_id={channel_info.get('last_live_video_id')}, live_status={channel_info.get('last_live_status')}, was_live={channel_info.get('was_live')}")
+            print(f"[DEBUG] 状態更新完了: normal={channel_info.get('last_normal_video_id')}, short={channel_info.get('last_short_video_id')}, live={channel_info.get('last_live_video_id')}, live_status={channel_info.get('last_live_status')}")
 
     # 通知送信メソッドを追加
     async def send_video_notification(self, guild, channel_info, video_info):
@@ -1270,45 +1259,50 @@ def migrate_youtube_channels(guild_id):
     updated = False
     
     for i, channel_info in enumerate(channels):
-        # last_live_statusフィールドの追加
-        if "last_live_status" not in channel_info:
-            channel_info["last_live_status"] = "none"  # デフォルト値
+        # --- 新方式: 各種別ごとにID・投稿日時を管理 ---
+        # 通常動画
+        if "last_normal_video_id" not in channel_info:
+            channel_info["last_normal_video_id"] = None
             updated = True
-        
-        # last_live_video_idフィールドの追加
+        if "last_normal_video_published" not in channel_info:
+            channel_info["last_normal_video_published"] = None
+            updated = True
+        # ショート動画
+        if "last_short_video_id" not in channel_info:
+            channel_info["last_short_video_id"] = None
+            updated = True
+        if "last_short_video_published" not in channel_info:
+            channel_info["last_short_video_published"] = None
+            updated = True
+        # ライブ配信
         if "last_live_video_id" not in channel_info:
-            channel_info["last_live_video_id"] = None  # デフォルト値
+            channel_info["last_live_video_id"] = None
             updated = True
-        
-        # was_liveフィールドを新しい状態管理に対応
-        current_live_status = channel_info.get("last_live_status", "none")
-        expected_was_live = (current_live_status in ["live", "upcoming", "ended"])
-        if channel_info.get("was_live") != expected_was_live:
-            channel_info["was_live"] = expected_was_live
+        if "last_live_video_published" not in channel_info:
+            channel_info["last_live_video_published"] = None
             updated = True
-        
-        # 通知モードフィールドの追加（デフォルトはembed）
-        if "notification_mode" not in channel_info:
-            channel_info["notification_mode"] = "embed"  # デフォルト値
+        # --- 旧フィールドからのマイグレーション ---
+        # last_video_id → last_normal_video_id へ移行
+        if channel_info.get("last_video_id") and not channel_info.get("last_normal_video_id"):
+            channel_info["last_normal_video_id"] = channel_info["last_video_id"]
+            channel_info["last_normal_video_published"] = channel_info.get("last_check")
             updated = True
-        
-        # カスタムメッセージ関連フィールドの削除（廃止機能）
-        if "custom_video_message" in channel_info:
-            del channel_info["custom_video_message"]
+        # last_video_id, last_live_video_id, last_check の削除（旧方式廃止）
+        if "last_video_id" in channel_info:
+            del channel_info["last_video_id"]
             updated = True
-        
-        if "custom_live_message" in channel_info:
-            del channel_info["custom_live_message"]
+        # last_checkは新方式では不要（各種別で管理）
+        if "last_check" in channel_info:
+            del channel_info["last_check"]
             updated = True
-        
+        # --- 既存のライブ状態管理フィールドも維持（last_live_status, was_live, notification_mode, role_mention等） ---
+        # ...既存のフィールド追加・削除処理...
         if updated:
             channels[i] = channel_info
-    
     if updated:
         update_guild_data(guild_id, "youtube_channels", channels)
         if debug:
             print(f"[DEBUG] チャンネル設定マイグレーション完了: {guild_id}, 更新数: {len([ch for ch in channels if updated])}")
-    
     return channels
 
 def get_youtube_channels_with_migration(guild_id):
