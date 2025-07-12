@@ -484,6 +484,13 @@ def main():
         except Exception as e:
             print(f"❌ スラッシュコマンド同期エラー: {e}")
 
+        # Ecoモード有効時はminiAntiとスラッシュコマンド以外を無効化
+        if 'plugins/slash/eco.py' not in [c.__module__ for c in bot.cogs.values()]:
+            try:
+                await bot.load_extension('plugins.slash.eco')
+            except Exception as e:
+                print(f"[eco] 拡張ロード失敗: {e}")
+
     asyncio.run(bot.start(token))
 
 
