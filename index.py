@@ -23,6 +23,7 @@ from typing import Any, Callable
 import traceback
 import base64
 import requests
+from waitress import serve
 
 from DataBase import start_api_key_cleanup_loop
 import utils
@@ -105,7 +106,7 @@ def registerFlask(app, bot_instance):
 def run_flask():
     global bot_instance
     registerFlask(app, bot_instance)
-    app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
+    serve(app, host="0.0.0.0", port=80)
 
 
 # 設定ファイルの読み書き

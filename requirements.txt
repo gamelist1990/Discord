@@ -10,4 +10,5 @@ lxml>=4.9.0
 feedparser>=6.0.10
 # APIサーバー追加依存関係
 psutil>=5.9.0
+waitress
 
