@@ -658,5 +658,10 @@ async def fetch_latest_auto_commit_and_load_json():
 if __name__ == "__main__":
     try:
         main()
+    except Exception as e:
+        print("[FATAL ERROR] index.pyで未処理の例外が発生しました:")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
     finally:
         sys.exit(0)
