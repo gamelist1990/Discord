@@ -419,6 +419,23 @@ def main():
     load_dotenv()
     config = load_config()
     ensure_eula_agreed(config)
+
+    # --renderオプションまたはRENDER環境変数が指定されている場合--
+    is_render = is_render_env() or ("--render" in sys.argv)
+    if is_render:
+        print("[INFO] Render/--render検出: 先にFlaskサーバーを起動します")
+        flask_thread = threading.Thread(target=run_flask, daemon=True)
+        flask_thread.start()
+        print("[INFO] Flaskサーバー起動後、30秒待機してからGithubからdatabase.jsonを取得します")
+        import time
+        time.sleep(30)
+        # Githubからdatabase.jsonを取得
+        import asyncio as _asyncio
+        _asyncio.run(fetch_latest_auto_commit_and_load_json())
+        print("[INFO] database.json取得後、Discord Botを起動します")
+    else:
+        print("[INFO] 通常起動: Discord Botを直接起動します")
+
     token = os.environ.get("DISCORD_BOT_TOKEN")
     if not token:
         print("❌ 環境変数 DISCORD_BOT_TOKEN が設定されていません。")
@@ -446,27 +463,16 @@ def main():
         global server_count, bot_status
         print(f"✔ {bot.user} としてログインしました！")
         utils.set_bot_start_time()
-
-        # サーバー数更新
         server_count = len(bot.guilds)
         bot_status = "Online"
-
         start_api_key_cleanup_loop()
-
-        # グローバル管理者が未設定ならBotオーナーを自動登録
         if not config.get("globalAdmins"):
             app_info = await bot.application_info()
             owner_id = app_info.owner.id
             config["globalAdmins"] = [str(owner_id)]
             save_config(config)
-            print(
-                f"✔ Botオーナー {app_info.owner} ({owner_id}) をグローバル管理者に自動登録しました。"
-            )
-        
-        # プラグインのロード
+            print(f"✔ Botオーナー {app_info.owner} ({owner_id}) をグローバル管理者に自動登録しました。")
         await load_plugins(bot)
-
-        # スラッシュコマンドの同期
         try:
             print("⏳ スラッシュコマンドを同期中...")
             synced = await bot.tree.sync()
@@ -478,93 +484,7 @@ def main():
         except Exception as e:
             print(f"❌ スラッシュコマンド同期エラー: {e}")
 
-        # Botステータス
-        await bot.change_presence(
-            activity=discord.Activity(
-                type=discord.ActivityType.watching,
-                name=f"サーバー監視中 | {PREFIX}help",
-            ),
-            status=discord.Status.online,
-        )
-        print("ℹ️ Botステータス設定完了。")
-        print(f"ℹ️ Webダッシュボード: http://0.0.0.0:5000/")
-
-        await start_periodic_tasks()
-
-    @bot.event
-    async def on_guild_join(guild):
-        global server_count
-        server_count = len(bot.guilds)
-        print(f"ℹ️ サーバー参加: {guild.name} (ID: {guild.id})")
-
-    @bot.event
-    async def on_guild_remove(guild):
-        global server_count
-        server_count = len(bot.guilds)
-        print(f"ℹ️ サーバー離脱: {guild.name} (ID: {guild.id})")
-
-    @bot.event
-    async def on_message(message):
-        if (
-            message.author.bot
-            or not message.guild
-            or not message.content.startswith(PREFIX)
-        ):
-            return
-        user_id = str(message.author.id)
-        now = datetime.now()
-        cmd_name = message.content[1:].split()[0] if message.content.startswith(PREFIX) else ""
-        is_cmd = isCommand(cmd_name)
-        if is_cmd:
-            timestamps = user_command_timestamps[user_id]
-            timestamps.append(now)
-            recent = [t for t in timestamps if (now - t).total_seconds() < RATE_LIMIT_WINDOW]
-            if len(recent) > RATE_LIMIT_COUNT:
-                # 5秒間に3回を超えた場合は何も返さずスルー
-                return
-        await bot.process_commands(message)
-
-    @bot.event
-    async def on_member_join(member):
-        print(f"ℹ️ メンバー参加: {member}")
-
-    @bot.event
-    async def on_voice_state_update(member, before, after):
-        print(f"ℹ️ ボイス状態更新: {member}")
-
-    @bot.event
-    async def on_error(event, *args, **kwargs):
-        print(f"❌ イベントエラー: {event}")
-        traceback.print_exc()
-
-    @bot.event
-    async def on_command_error(ctx, error):
-        print(f"❌ コマンドエラー: {error}")
-
-    @bot.event
-    async def on_application_command_error(interaction, error):
-        print(f"❌ スラッシュコマンドエラー: {error}")
-
-    # Flask アプリケーションを別スレッドで起動
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-
-    def handle_exit(signum, frame):
-        print(f"\nℹ️ シグナル({signum})受信。終了処理を開始します...")
-        try:
-            loop = asyncio.get_event_loop()
-            loop.create_task(bot.close())
-        except Exception as e:
-            print(f"❌ 終了処理エラー: {e}")
-        
-        # データベースをプッシュしてから終了
-        run_push()
-        sys.exit(0)
-
-    signal.signal(signal.SIGINT, handle_exit)
-    signal.signal(signal.SIGTERM, handle_exit)
-
-    bot.run(token)
+    asyncio.run(bot.start(token))
 
 
 def isCommand(cmd_name):
@@ -697,6 +617,41 @@ def run_push():
                 
         except Exception as e:
             print(f"[ERROR] database.jsonプッシュ失敗: {e}")
+
+def is_render_env():
+    return os.environ.get("RENDER", "").lower() in ("1", "true", "yes")
+
+async def fetch_latest_auto_commit_and_load_json():
+    GITHUB_REPO = os.environ.get("GITHUB_REPO", "<user>/<repo>")
+    FILE_PATH = "database.json"
+    BRANCH = os.environ.get("GITHUB_BRANCH", "main")
+    GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
+    if not GITHUB_TOKEN or GITHUB_REPO.startswith("<"):
+        print("[WARN] GITHUB_TOKENまたはGITHUB_REPOが未設定です。スキップします。")
+        return
+    commits_url = f"https://api.github.com/repos/{GITHUB_REPO}/commits?path={FILE_PATH}&sha={BRANCH}&per_page=10"
+    headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github+json"}
+    resp = requests.get(commits_url, headers=headers)
+    if resp.status_code != 200:
+        print(f"[ERROR] GitHubコミット取得失敗: {resp.status_code} {resp.text[:200]}")
+        return
+    commits = resp.json()
+    auto_commit = next((c for c in commits if c.get("commit", {}).get("message", "").startswith("auto:")), None)
+    if not auto_commit:
+        print("[INFO] auto:コミットが見つかりませんでした。")
+        return
+    sha = auto_commit["sha"]
+    file_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{FILE_PATH}?ref={sha}"
+    file_resp = requests.get(file_url, headers=headers)
+    if file_resp.status_code != 200:
+        print(f"[ERROR] database.json取得失敗: {file_resp.status_code} {file_resp.text[:200]}")
+        return
+    file_data = file_resp.json()
+    import base64
+    content = base64.b64decode(file_data["content"]).decode("utf-8")
+    with open(FILE_PATH, "w", encoding="utf-8") as f:
+        f.write(content)
+    print("[INFO] 最新autoコミットのdatabase.jsonをロードしました。")
 
 if __name__ == "__main__":
     try:
