@@ -3,247 +3,57 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Discord Bot ダッシュボード</title>
+    <title>Discord Bot 起動時間</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: 20px;
-        }
-        
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-        
-        .header {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            border-radius: 15px;
-            padding: 30px;
-            text-align: center;
-            margin-bottom: 30px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-        }
-        
-        .header h1 {
-            color: white;
-            font-size: 2.5em;
-            margin-bottom: 10px;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
-        }
-        
-        .header p {
-            color: rgba(255, 255, 255, 0.8);
-            font-size: 1.2em;
-        }
-        
-        .dashboard {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 30px;
-        }
-        
-        .card {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            border-radius: 15px;
-            padding: 30px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }
-        
-        .card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
-        }
-        
-        .card-title {
-            color: white;
-            font-size: 1.5em;
-            margin-bottom: 20px;
             display: flex;
             align-items: center;
-            gap: 10px;
+            justify-content: center;
         }
-        
-        .card-value {
-            color: #4ade80;
-            font-size: 2.5em;
-            font-weight: bold;
-            margin-bottom: 10px;
-            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+        .uptime-box {
+            background: rgba(255,255,255,0.15);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 40px 60px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+            text-align: center;
         }
-        
-        .card-description {
-            color: rgba(255, 255, 255, 0.7);
-            font-size: 1em;
-        }
-        
-        .status-indicator {
-            display: inline-block;
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            margin-right: 8px;
-        }
-        
-        .status-online {
-            background-color: #4ade80;
-            box-shadow: 0 0 10px #4ade80;
-        }
-        
-        .status-offline {
-            background-color: #ef4444;
-            box-shadow: 0 0 10px #ef4444;
-        }
-        
-        .status-starting {
-            background-color: #fbbf24;
-            box-shadow: 0 0 10px #fbbf24;
-        }
-        
-        .loading {
-            color: rgba(255, 255, 255, 0.6);
-            font-style: italic;
-        }
-        
-        .refresh-button {
-            background: rgba(255, 255, 255, 0.2);
-            border: 1px solid rgba(255, 255, 255, 0.3);
+        .uptime-title {
             color: white;
-            padding: 10px 20px;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            margin-top: 20px;
+            font-size: 2em;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
         }
-        
-        .refresh-button:hover {
-            background: rgba(255, 255, 255, 0.3);
-        }
-        
-        @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.5; }
-            100% { opacity: 1; }
-        }
-        
-        .pulse {
-            animation: pulse 2s infinite;
+        .uptime-value {
+            color: #4ade80;
+            font-size: 3em;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>PEX Server Bot..</h1>
-            <p>リアルタイム監視システム</p>
-        </div>
-        
-        <div class="dashboard">
-            <div class="card">
-                <div class="card-title">
-                    <span class="status-indicator status-starting" id="status-indicator"></span>
-                    Bot ステータス
-                </div>
-                <div class="card-value" id="bot-status">読み込み中...</div>
-                <div class="card-description" id="bot-name">Bot名: 取得中...</div>
-            </div>
-            
-            <div class="card">
-                <div class="card-title">
-                    ⏱️ 稼働時間
-                </div>
-                <div class="card-value" id="uptime">--:--:--</div>
-                <div class="card-description" id="start-time">開始時刻: --</div>
-            </div>
-            
-            <div class="card">
-                <div class="card-title">
-                    🌐 監視中サーバー数
-                </div>
-                <div class="card-value" id="server-count">0</div>
-                <div class="card-description">参加しているDiscordサーバー</div>
-            </div>
-            
-            <div class="card">
-                <div class="card-title">
-                    📊 システム情報
-                </div>
-                <div class="card-value" id="last-update">--:--:--</div>
-                <div class="card-description">最終更新時刻</div>
-                <button class="refresh-button" onclick="fetchBotStatus()">手動更新</button>
-            </div>
-        </div>
+    <div class="uptime-box">
+        <div class="uptime-title">Bot 起動時間</div>
+        <div class="uptime-value" id="uptime">--:--:--</div>
     </div>
-
     <script>
-        function getStatusClass(status) {
-            switch(status.toLowerCase()) {
-                case 'online': return 'status-online';
-                case 'offline': return 'status-offline';
-                case 'starting...': return 'status-starting';
-                default: return 'status-starting';
-            }
-        }
-        
-        function formatDateTime(isoString) {
-            if (!isoString) return '--';
-            const date = new Date(isoString);
-            return date.toLocaleString('ja-JP');
-        }
-        
-        function fetchBotStatus() {
+        function fetchUptime() {
             fetch('/api/bot-status')
                 .then(response => response.json())
                 .then(data => {
-                    // Bot ステータス更新
-                    document.getElementById('bot-status').textContent = data.status;
-                    document.getElementById('bot-name').textContent = `Bot名: ${data.bot_name}`;
-                    
-                    // ステータスインジケータ更新
-                    const indicator = document.getElementById('status-indicator');
-                    indicator.className = 'status-indicator ' + getStatusClass(data.status);
-                    
-                    // 稼働時間更新
                     document.getElementById('uptime').textContent = data.uptime || '--:--:--';
-                    document.getElementById('start-time').textContent = 
-                        `開始時刻: ${formatDateTime(data.start_time)}`;
-                    
-                    // サーバー数更新
-                    document.getElementById('server-count').textContent = data.server_count;
-                    
-                    // 最終更新時刻
-                    document.getElementById('last-update').textContent = 
-                        new Date().toLocaleTimeString('ja-JP');
                 })
-                .catch(error => {
-                    console.error('Error fetching bot status:', error);
-                    document.getElementById('bot-status').textContent = 'エラー';
-                    document.getElementById('bot-status').className = 'card-value pulse';
+                .catch(() => {
+                    document.getElementById('uptime').textContent = 'エラー';
                 });
         }
-        
-        // 初回読み込み
-        fetchBotStatus();
-        
-        // 5秒ごとに自動更新
-        setInterval(fetchBotStatus, 5000);
-        
-        // ページの可視性が変わった時の処理
-        document.addEventListener('visibilitychange', function() {
-            if (!document.hidden) {
-                fetchBotStatus();
-            }
-        });
+        fetchUptime();
+        setInterval(fetchUptime, 5000);
     </script>
 </body>
 </html>

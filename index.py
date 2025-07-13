@@ -106,7 +106,7 @@ def registerFlask(app, bot_instance):
 def run_flask():
     global bot_instance
     registerFlask(app, bot_instance)
-    serve(app, host="0.0.0.0", port=80)
+    serve(app, host="0.0.0.0", port=5000)
 
 
 # 設定ファイルの読み書き
