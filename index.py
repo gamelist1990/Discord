@@ -1,6 +1,10 @@
+
 import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+
+# Unityイベント連携
+from Unity.Module.discord_event import relay_discord_event
 
 import os
 import json
@@ -414,6 +418,7 @@ def unregisterBotEvent(bot, event_name: str, handler):
 
 # Bot起動
 def main():
+    from plugins import handle_custom_command
     global bot_instance, bot_start_time, server_count, bot_status
 
     load_dotenv()
@@ -483,8 +488,21 @@ def main():
                     print(f"  - /{cmd.name}: {cmd.description}")
         except Exception as e:
             print(f"❌ スラッシュコマンド同期エラー: {e}")
+        # Unity afterEventにも発火
+        relay_discord_event("ready")
 
-       
+    @bot.event
+    async def on_message(message):
+        await handle_custom_command(message)
+        relay_discord_event("message", message)
+
+    @bot.event
+    async def on_member_join(member):
+        relay_discord_event("member_join", member)
+
+    @bot.event
+    async def on_member_remove(member):
+        relay_discord_event("member_remove", member)
 
     asyncio.run(bot.start(token))
 

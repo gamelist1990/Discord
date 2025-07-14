@@ -456,5 +456,6 @@ async def private_chat_list(ctx):
     await ctx.send(embed=embed)
 
 
-def setup(bot):
+def setup(bot=None):
+    # bot引数は互換用。未使用。
     return private_chat_cmd

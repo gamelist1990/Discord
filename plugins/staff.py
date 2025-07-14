@@ -24,7 +24,7 @@ def setup(bot):
     staff.add_command(help_cmd)
     staff.add_command(list_cmd)
     staff.add_command(private_cmd)
+    staff.add_command(private_chat_setup())
     staff.add_command(report_cmd)
-    staff.add_command(private_chat_setup(bot))
 
     register_command(bot, staff, op_level=OP_STAFF)
