@@ -3,18 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Discord Bot 起動時間</title>
+    <title>現在時刻デモ</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: 20px;
             display: flex;
             align-items: center;
             justify-content: center;
+            transition: background 0.5s;
         }
-        .uptime-box {
+        .time-box {
             background: rgba(255,255,255,0.15);
             backdrop-filter: blur(10px);
             border-radius: 15px;
@@ -22,13 +22,13 @@
             box-shadow: 0 8px 32px rgba(0,0,0,0.15);
             text-align: center;
         }
-        .uptime-title {
+        .time-title {
             color: white;
             font-size: 2em;
             margin-bottom: 20px;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
         }
-        .uptime-value {
+        .time-value {
             color: #4ade80;
             font-size: 3em;
             font-weight: bold;
@@ -37,23 +37,79 @@
     </style>
 </head>
 <body>
-    <div class="uptime-box">
-        <div class="uptime-title">Bot 起動時間</div>
-        <div class="uptime-value" id="uptime">--:--:--</div>
+    <div class="time-box">
+        <div class="time-title">現在の時刻</div>
+        <div class="time-value" id="current-time">--:--:--</div>
     </div>
     <script>
-        function fetchUptime() {
-            fetch('/api/bot-status')
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('uptime').textContent = data.uptime || '--:--:--';
-                })
-                .catch(() => {
-                    document.getElementById('uptime').textContent = 'エラー';
-                });
+        // 時間帯ごとの色（朝・昼・夕方・夜・深夜）
+        const timeThemes = [
+            { hour: 5,  bg: ['#fceabb', '#f8b500'], color: '#f59e42' },   // 朝
+            { hour: 11, bg: ['#a8edea', '#fed6e3'], color: '#4ade80' },   // 昼
+            { hour: 17, bg: ['#f7971e', '#ffd200'], color: '#fbbf24' },   // 夕方
+            { hour: 19, bg: ['#667eea', '#764ba2'], color: '#818cf8' },   // 夜
+            { hour: 22, bg: ['#232526', '#414345'], color: '#60a5fa' }    // 深夜
+        ];
+
+        // RGB変換
+        function hexToRgb(hex) {
+            hex = hex.replace('#', '');
+            if (hex.length === 3) hex = hex.split('').map(x => x + x).join('');
+            const num = parseInt(hex, 16);
+            return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
         }
-        fetchUptime();
-        setInterval(fetchUptime, 5000);
+        function rgbToHex([r, g, b]) {
+            return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
+        }
+        function lerp(a, b, t) {
+            return a + (b - a) * t;
+        }
+        function lerpColor(c1, c2, t) {
+            return rgbToHex([
+                Math.round(lerp(c1[0], c2[0], t)),
+                Math.round(lerp(c1[1], c2[1], t)),
+                Math.round(lerp(c1[2], c2[2], t))
+            ]);
+        }
+
+        function getThemeByTime(h, m, s) {
+            // 現在の時間を分単位で
+            const nowMin = h * 60 + m + s / 60;
+            let prev = timeThemes[timeThemes.length - 1];
+            let next = timeThemes[0];
+            for (let i = 0; i < timeThemes.length; i++) {
+                if (nowMin >= timeThemes[i].hour * 60) {
+                    prev = timeThemes[i];
+                    next = timeThemes[(i + 1) % timeThemes.length];
+                }
+            }
+            // 区間の長さ
+            let start = prev.hour * 60;
+            let end = next.hour * 60;
+            if (end <= start) end += 24 * 60;
+            let t = (nowMin - start) / (end - start);
+            // 背景グラデーション補間
+            const bg1 = lerpColor(hexToRgb(prev.bg[0]), hexToRgb(next.bg[0]), t);
+            const bg2 = lerpColor(hexToRgb(prev.bg[1]), hexToRgb(next.bg[1]), t);
+            // 文字色補間
+            const color = lerpColor(hexToRgb(prev.color), hexToRgb(next.color), t);
+            return { bg: `linear-gradient(135deg, ${bg1} 0%, ${bg2} 100%)`, color };
+        }
+
+        function updateThemeAndTime() {
+            const now = new Date();
+            const h = now.getHours();
+            const m = now.getMinutes();
+            const s = now.getSeconds();
+            const mm = m.toString().padStart(2, '0');
+            const ss = s.toString().padStart(2, '0');
+            document.getElementById('current-time').textContent = `${h}:${mm}:${ss}`;
+            const theme = getThemeByTime(h, m, s);
+            document.body.style.background = theme.bg;
+            document.getElementById('current-time').style.color = theme.color;
+        }
+        updateThemeAndTime();
+        setInterval(updateThemeAndTime, 1000);
     </script>
 </body>
 </html>
