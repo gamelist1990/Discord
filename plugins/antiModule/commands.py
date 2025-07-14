@@ -12,10 +12,12 @@ from index import is_admin as isAdmin, load_config
 
 def setup_anti_commands(bot):
     config = load_config()
-    
+
     # フラグシステムのコマンドを設定
     setup_flag_commands(bot)
-    
+
+    from plugins import register_command
+
     @commands.group()
     async def anti(ctx):
         """
@@ -284,17 +286,25 @@ def setup_anti_commands(bot):
                 if not (1 <= count <= 100):
                     await ctx.send("❌ 1～100の範囲で指定してください。")
                     return
-                # 指定数だけ減算
+                # 指定数だけ減算: まず全リセット→新しいフラグを1件だけ追加
+                await FlagSystem.reset_user_flags(ctx.guild, user_id)
                 new_flags = max(0, before - count)
-                # 直接書き換え
-                guild_id = ctx.guild.id
-                FlagSystem._ensure_user_flags_loaded(guild_id)
-                if user_id in FlagSystem._user_flags[guild_id]:
-                    FlagSystem._user_flags[guild_id][user_id]["flags"] = new_flags
-                    FlagSystem._save_user_flags_to_db(guild_id, FlagSystem._user_flags[guild_id])
-                    await ctx.send(f"✅ <@{user_id}> のフラグを {count} 減らしました。（{before} → {new_flags}）")
-                else:
-                    await ctx.send(f"❌ ユーザーデータが見つかりません: {user_id}")
+                if new_flags > 0:
+                    # flags_added, last_decay, violationsの最低限で追加
+                    from plugins.antiModule.flag_system import FlagSystem as _FS
+                    guild_id = ctx.guild.id
+                    _FS._ensure_user_flags_loaded(guild_id)
+                    if guild_id not in _FS._user_flags:
+                        _FS._user_flags[guild_id] = {}
+                    if user_id not in _FS._user_flags[guild_id]:
+                        _FS._user_flags[guild_id][user_id] = []
+                    _FS._user_flags[guild_id][user_id].append({
+                        "flags_added": new_flags,
+                        "last_decay": int(discord.utils.utcnow().timestamp()),
+                        "violations": []
+                    })
+                    _FS._save_user_flags_to_db(guild_id, _FS._user_flags[guild_id])
+                await ctx.send(f"✅ <@{user_id}> のフラグを {count} 減らしました。（{before} → {new_flags}）")
             return
         elif subcommand != "":
             await ctx.send("❌ 無効なサブコマンドです。使用可能: `#anti flag` `#anti flag quick` `#anti flag clear <user_id> [count]`")
@@ -324,5 +334,5 @@ def setup_anti_commands(bot):
         message = await ctx.send(embed=embed, view=view)
         view.message = message
 
-    bot.add_command(anti)
+    register_command(bot, anti)
 

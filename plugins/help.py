@@ -1,7 +1,7 @@
 from discord import Embed, Interaction, ButtonStyle
 from discord.ui import View, Button
 from discord.ext import commands
-from plugins import register_command
+from plugins import register_command, COMMAND_TABLE
 from lib.op import OP_EVERYONE
 
 class HelpPageView(View):
@@ -41,7 +41,7 @@ class HelpPageView(View):
                 name = name.strip('` ')
                 desc = desc.strip()
                 # 説明が長い場合は省略
-                max_desc_len = 40
+                max_desc_len = 100
                 if len(desc) > max_desc_len:
                     desc = desc[:max_desc_len] + "..."
                 embed.add_field(
@@ -88,25 +88,25 @@ def setup(bot):
         cmd_name = args[0] if args else None
         if cmd_name:
             # コマンド名で個別説明
-            cmd = ctx.bot.get_command(cmd_name)
-            if cmd:
-                # 説明が長い場合も個別表示は省略しない
-                embed = Embed(
-                    title=f"`{ctx.prefix}{cmd.name}` の説明",
-                    description=cmd.help or '説明なし',
-                    color=0x4ade80
-                )
-                await ctx.send(embed=embed, delete_after=30)
-            else:
-                await ctx.send(f"❌ コマンド `{cmd_name}` は見つかりませんでした。", delete_after=10)
+            for name, (func, op_level, help_text) in COMMAND_TABLE.items():
+                if name == cmd_name or name == f"{ctx.prefix}{cmd_name}":
+                    embed = Embed(
+                        title=f"`{ctx.prefix}{name}` の説明",
+                        description=help_text or '説明なし',
+                        color=0x4ade80
+                    )
+                    await ctx.send(embed=embed, delete_after=30)
+                    return
+            await ctx.send(f"❌ コマンド `{cmd_name}` は見つかりませんでした。", delete_after=10)
             return
         cmds = []
         max_desc_len = 20
-        for c in ctx.bot.commands:
-            desc = c.help or '説明なし'
+        # COMMAND_TABLEからコマンド一覧のみ取得
+        for name, (func, op_level, help_text) in COMMAND_TABLE.items():
+            desc = help_text or '説明なし'
             if len(desc) > max_desc_len:
                 desc = desc[:max_desc_len] + "..."
-            cmds.append(f"`{ctx.prefix}{c.name}`: {desc}")
+            cmds.append(f"`{ctx.prefix}{name}`: {desc}")
         view = HelpPageView(ctx, cmds, per_page=3)
         embed = view.get_embed()
         await ctx.send(embed=embed, view=view)
