@@ -3,20 +3,21 @@ class MiniAntiBypass:
     @staticmethod
     async def should_bypass(message):
         """
-        指定されたメッセージの送信者がバイパス権限を持っているかチェック
+        指定されたメッセージの送信者がバイパス権限を持っているか、またはチャンネルがホワイトリストかチェック
         """
         if not message.guild:
             return False
-        
         try:
-            # AntiCheatConfigを使用してバイパスロールIDを取得
             from .config import AntiCheatConfig
+            # ホワイトリストチャンネルなら常にバイパス
+            whitelist = await AntiCheatConfig.get_setting(message.guild, "whitelist_channels")
+            if whitelist is not None and type(whitelist) is list:
+                if message.channel.id in [int(x) for x in whitelist if isinstance(x, int) or (isinstance(x, str) and str(x).isdigit())]:
+                    return True
+            # バイパスロールID取得
             bypass_role_id = await AntiCheatConfig.get_setting(message.guild, "bypass_role")
-            
             if not bypass_role_id:
                 return False
-            
-            # ロールIDを整数に変換
             try:
                 if bypass_role_id is not None and str(bypass_role_id).isdigit():
                     bypass_role_id = int(str(bypass_role_id))
@@ -25,16 +26,12 @@ class MiniAntiBypass:
             except (ValueError, TypeError):
                 print(f"[miniAnti] Invalid bypass role ID: {bypass_role_id}")
                 return False
-            
             # ユーザーが該当ロールを持っているかチェック
             if hasattr(message.author, "roles"):
                 for role in message.author.roles:
                     if role.id == bypass_role_id:
-                        #print(f"[miniAnti] Bypass granted for user {message.author} (role: {role.name})")
                         return True
-            
             return False
-            
         except Exception as e:
             print(f"[miniAnti] Error in bypass check: {e}")
             return False
