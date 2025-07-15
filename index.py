@@ -431,9 +431,9 @@ def main():
         print("[INFO] Render/--render検出: 先にFlaskサーバーを起動します")
         flask_thread = threading.Thread(target=run_flask, daemon=True)
         flask_thread.start()
-        print("[INFO] Flaskサーバー起動後、30秒待機してからGithubからdatabase.jsonを取得します")
+        print("[INFO] Flaskサーバー起動後、180秒待機してからGithubからdatabase.jsonを取得します")
         import time
-        time.sleep(30)
+        time.sleep(180)
         # Githubからdatabase.jsonを取得
         import asyncio as _asyncio
         _asyncio.run(fetch_latest_auto_commit_and_load_json())
@@ -680,6 +680,16 @@ if __name__ == "__main__":
         print("[FATAL ERROR] index.pyで未処理の例外が発生しました:")
         import traceback
         traceback.print_exc()
+        if RUN_PUSH_ON_EXIT:
+            try:
+                run_push()
+            except Exception as e2:
+                print(f"[ERROR] finallyでのrun_push失敗: {e2}")
         sys.exit(1)
     finally:
+        if RUN_PUSH_ON_EXIT:
+            try:
+                run_push()
+            except Exception as e2:
+                print(f"[ERROR] finallyでのrun_push失敗: {e2}")
         sys.exit(0)
