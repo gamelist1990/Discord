@@ -27,30 +27,6 @@ def register_api_routes(app: Flask, bot_instance=None):
             return False
         return True
 
-    def get_bot_info():
-        """Bot情報を取得するヘルパー関数"""
-        if bot_instance:
-            start_time = utils.get_bot_start_time() if hasattr(utils, 'get_bot_start_time') else None
-            uptime = None
-            if start_time:
-                uptime = utils.format_uptime(start_time)
-            return {
-                'name': bot_instance.user.name if bot_instance.user else 'Bot',
-                'is_ready': bot_instance.is_ready() if hasattr(bot_instance, 'is_ready') else False,
-                'server_count': len(bot_instance.guilds) if hasattr(bot_instance, 'guilds') else 0,
-                'uptime': uptime,
-                'start_time': start_time.isoformat() if start_time else None,
-                'status': getattr(bot_instance, 'status', 'unknown'),
-            }
-        return {
-            'name': 'Bot',
-            'is_ready': False,
-            'server_count': 0,
-            'uptime': None,
-            'start_time': None,
-            'status': 'unknown',
-        }
-
     @app.route("/database", methods=["GET"])
     def api_database():
         """データベース全体を取得（管理用）"""
@@ -70,10 +46,9 @@ def register_api_routes(app: Flask, bot_instance=None):
             return jsonify({'error': 'Forbidden'}), 403
         try:
             system_info = utils.get_system_info() if hasattr(utils, 'get_system_info') else {}
-            bot_info = get_bot_info()
             return jsonify({
                 'success': True,
-                'bot': bot_info,
+                'bot': True,
                 'system': system_info,
                 'timestamp': datetime.now().isoformat()
             })

@@ -53,11 +53,14 @@ class ModalInputView(View):
         allowed_user_id: Optional[int] = None,
         on_button_embed: Optional[Union[discord.Embed, Callable]] = None,
         on_submit_embed: Optional[Union[discord.Embed, Callable]] = None,
+        show_modal_direct: bool = False,  # 追加: TrueでView送信時に即Modalを表示
     ):
         super().__init__(timeout=300)  # タイムアウトを5分(300秒)に設定
-        self.add_item(
-            self.ModalButton(self, label, style, button_emoji, button_disabled)
-        )
+        self.show_modal_direct = show_modal_direct
+        if not show_modal_direct:
+            self.add_item(
+                self.ModalButton(self, label, style, button_emoji, button_disabled)
+            )
         self.modal_title = modal_title
         self.placeholder = placeholder
         self.text_label = text_label
@@ -74,6 +77,16 @@ class ModalInputView(View):
         self.on_button_embed = on_button_embed
         self.on_submit_embed = on_submit_embed
         self.message: discord.Message = None  # type: ignore
+
+    async def send_or_modal(self, interaction: discord.Interaction, **kwargs):
+        """
+        show_modal_direct=Trueの場合は即Modal、FalseならViewを送信。
+        """
+        if self.show_modal_direct:
+            modal = self.InputModal(self, interaction)
+            await interaction.response.send_modal(modal)
+        else:
+            await interaction.response.send_message(view=self, **kwargs)
 
     async def on_timeout(self):
         # タイムアウト時にViewがアタッチされたメッセージを削除

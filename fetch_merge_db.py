@@ -293,6 +293,6 @@ if __name__ == "__main__":
     else:
         # 従来の動作（後方互換性）
         dotenv_path = os.path.join(os.path.dirname(__file__), ".env")
-        url = "https://discord-pri1.onrender.com/database"
+        url = "https://pexsabas.onrender.com/database"
         success = fetch_and_merge_json(url, dotenv_path=dotenv_path)
         sys.exit(0 if success else 1)

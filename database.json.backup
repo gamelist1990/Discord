@@ -110,13 +110,7 @@
     },
     "staffRole": "1340318302936764478",
     "alertChannel": "1384045022210424882",
-    "hansei_reports": {
-      "1371278226399428608": {
-        "text": "このたびは自分の軽率な行動により、ご迷惑をおかけしてしまい、大変申し訳ありませんでした。今後は同じ過ちを繰り返さぬよう、自らの行動に責任を持ち、常に周囲への配慮を忘れずに行動いたします。反省の気持ちを忘れず、誠実に努めてまいります。",
-        "expire": "2025-07-08T04:45:25.865011+00:00",
-        "user_name": "ダミー裏垢(今後行動するのはこの垢です,dmはこちらに)"
-      }
-    },
+    "hansei_reports": {},
     "youtube_channels": [
       {
         "channel_id": "UCue_c1nQyNwfZa2cLR4fo7g",
@@ -131,23 +125,6 @@
         "notification_mode": "embed",
         "last_normal_video_id": "W9qS4lClj3o",
         "last_normal_video_published": "2025-07-09T19:44:34.759615+09:00",
-        "last_short_video_id": null,
-        "last_short_video_published": null,
-        "last_live_video_published": null
-      },
-      {
-        "channel_id": "UCjJmYy279ehSYSwR1A3fXtA",
-        "channel_name": "マグロヘッド",
-        "rss_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCjJmYy279ehSYSwR1A3fXtA",
-        "notification_channel": 1119320648448213043,
-        "interval": 5,
-        "last_live_video_id": null,
-        "last_live_status": "none",
-        "was_live": false,
-        "notification_mode": "url",
-        "created_at": "2025-07-02T23:27:22.365211+09:00",
-        "last_normal_video_id": "-EP33MFLbFA",
-        "last_normal_video_published": "2025-07-10T08:23:41+00:00",
         "last_short_video_id": null,
         "last_short_video_published": null,
         "last_live_video_published": null

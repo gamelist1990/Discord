@@ -1,6 +1,6 @@
-
 import sys
 import os
+
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 # Unityイベント連携
@@ -65,17 +65,20 @@ async def update_isBot_periodically():
     while True:
         # Botがオンラインかどうかを判定
         current = bot_instance is not None and bot_instance.is_ready()
-        bot_name = bot_instance.user.name if bot_instance and bot_instance.user else "Bot"
+        bot_name = (
+            bot_instance.user.name if bot_instance and bot_instance.user else "Bot"
+        )
         now = datetime.now()
         # 10分ごとにパッチとして最新情報を保存
         isBot_patch = {
-            'isBot': current,
-            'bot_name': bot_name,
-            'timestamp': now.isoformat()
+            "isBot": current,
+            "bot_name": bot_name,
+            "timestamp": now.isoformat(),
         }
         isBot = current
         last_isBot_update = now
         await asyncio.sleep(600)  # 10分(600秒)ごとに更新
+
 
 # Flask アプリケーション
 app = Flask(__name__)
@@ -91,6 +94,7 @@ isBot_patch = None
 def dashboard():
     return render_template("index.html")
 
+
 def registerFlask(app, bot_instance):
     """
     Flask拡張APIの登録を一元化する関数。
@@ -99,6 +103,7 @@ def registerFlask(app, bot_instance):
     # API エンドポイントを登録
     try:
         import api
+
         # bot_start_timeをappに設定
         app.bot_start_time = bot_start_time
         api.register_api_routes(app, bot_instance)
@@ -153,8 +158,10 @@ def is_guild_admin(user_id, guild_id, config):
     return str(user_id) in config.get("guildAdmins", {}).get(str(guild_id), [])
 
 
-def is_admin(user_id, guild_id, config): 
-    result = is_global_admin(user_id, config) or is_guild_admin(user_id, guild_id, config)
+def is_admin(user_id, guild_id, config):
+    result = is_global_admin(user_id, config) or is_guild_admin(
+        user_id, guild_id, config
+    )
     print(f"[DEBUG] is_admin: user_id={user_id}, guild_id={guild_id}, result={result}")
     return result
 
@@ -199,11 +206,11 @@ def registerSlashCommand(bot, name, description, callback, parameters=None):
     callback: コマンド実行時のコールバック関数 (async def func(interaction, ...))
     parameters: パラメータのリスト [{"name": "user", "description": "ユーザー", "type": discord.Member, "required": False}, ...]
     """
-    tree = bot.tree if hasattr(bot, 'tree') else None
+    tree = bot.tree if hasattr(bot, "tree") else None
     if not tree:
         print("❌ スラッシュコマンドツリーが見つかりません")
         return
-    
+
     # 既存のコマンドがある場合は削除
     try:
         existing_command = tree.get_command(name)
@@ -211,129 +218,168 @@ def registerSlashCommand(bot, name, description, callback, parameters=None):
             tree.remove_command(name)
     except:
         pass
-    
+
     if parameters:
         # パラメータの数に応じて動的にコマンドを作成
         param_count = len(parameters)
-        
+
         # describe辞書を作成
         describe_dict = {}
         for param in parameters:
             describe_dict[param["name"]] = param.get("description", "")
-        
+
         if param_count == 1:
             # 1つのパラメータの場合
             param = parameters[0]
             param_name = param["name"]
             param_type = param.get("type", str)
             param_required = param.get("required", True)
-            
+
             if param_type == discord.Member:
                 if param_required:
+
                     @app_commands.command(name=name, description=description)
                     @app_commands.describe(**describe_dict)
-                    async def cmd_member_required(interaction: discord.Interaction, user: discord.Member):
+                    async def cmd_member_required(
+                        interaction: discord.Interaction, user: discord.Member
+                    ):
                         try:
                             await callback(interaction, user)
                         except Exception as e:
                             print(f"❌ スラッシュコマンド /{name} 実行エラー: {e}")
                             await _handle_slash_error(interaction)
+
                     tree.add_command(cmd_member_required)
                 else:
+
                     @app_commands.command(name=name, description=description)
                     @app_commands.describe(**describe_dict)
-                    async def cmd_member_optional(interaction: discord.Interaction, user: typing.Optional[discord.Member] = None):
+                    async def cmd_member_optional(
+                        interaction: discord.Interaction,
+                        user: typing.Optional[discord.Member] = None,
+                    ):
                         try:
                             await callback(interaction, user)
                         except Exception as e:
                             print(f"❌ スラッシュコマンド /{name} 実行エラー: {e}")
                             await _handle_slash_error(interaction)
+
                     tree.add_command(cmd_member_optional)
             elif param_type == str:
                 if param_required:
+
                     @app_commands.command(name=name, description=description)
                     @app_commands.describe(**describe_dict)
-                    async def cmd_str_required(interaction: discord.Interaction, text: str):
+                    async def cmd_str_required(
+                        interaction: discord.Interaction, text: str
+                    ):
                         try:
                             await callback(interaction, text)
                         except Exception as e:
                             print(f"❌ スラッシュコマンド /{name} 実行エラー: {e}")
                             await _handle_slash_error(interaction)
+
                     tree.add_command(cmd_str_required)
                 else:
+
                     @app_commands.command(name=name, description=description)
                     @app_commands.describe(**describe_dict)
-                    async def cmd_str_optional(interaction: discord.Interaction, text: typing.Optional[str] = None):
+                    async def cmd_str_optional(
+                        interaction: discord.Interaction,
+                        text: typing.Optional[str] = None,
+                    ):
                         try:
                             await callback(interaction, text)
                         except Exception as e:
                             print(f"❌ スラッシュコマンド /{name} 実行エラー: {e}")
                             await _handle_slash_error(interaction)
+
                     tree.add_command(cmd_str_optional)
             elif param_type == int:
                 if param_required:
+
                     @app_commands.command(name=name, description=description)
                     @app_commands.describe(**describe_dict)
-                    async def cmd_int_required(interaction: discord.Interaction, number: int):
+                    async def cmd_int_required(
+                        interaction: discord.Interaction, number: int
+                    ):
                         try:
                             await callback(interaction, number)
                         except Exception as e:
                             print(f"❌ スラッシュコマンド /{name} 実行エラー: {e}")
                             await _handle_slash_error(interaction)
+
                     tree.add_command(cmd_int_required)
                 else:
+
                     @app_commands.command(name=name, description=description)
                     @app_commands.describe(**describe_dict)
-                    async def cmd_int_optional(interaction: discord.Interaction, number: typing.Optional[int] = None):
+                    async def cmd_int_optional(
+                        interaction: discord.Interaction,
+                        number: typing.Optional[int] = None,
+                    ):
                         try:
                             await callback(interaction, number)
                         except Exception as e:
                             print(f"❌ スラッシュコマンド /{name} 実行エラー: {e}")
                             await _handle_slash_error(interaction)
+
                     tree.add_command(cmd_int_optional)
             else:
                 # その他の型（基本的なフォールバック）
                 @app_commands.command(name=name, description=description)
                 @app_commands.describe(**describe_dict)
-                async def cmd_other(interaction: discord.Interaction, value: typing.Optional[str] = None):
+                async def cmd_other(
+                    interaction: discord.Interaction, value: typing.Optional[str] = None
+                ):
                     try:
                         await callback(interaction, value)
                     except Exception as e:
                         print(f"❌ スラッシュコマンド /{name} 実行エラー: {e}")
                         await _handle_slash_error(interaction)
+
                 tree.add_command(cmd_other)
-        
+
         elif param_count == 2:
             # 2つのパラメータの場合
             param1 = parameters[0]
             param2 = parameters[1]
-            
+
             @app_commands.command(name=name, description=description)
             @app_commands.describe(**describe_dict)
-            async def cmd_two_params(interaction: discord.Interaction, arg1: typing.Any, arg2: typing.Any):
+            async def cmd_two_params(
+                interaction: discord.Interaction, arg1: typing.Any, arg2: typing.Any
+            ):
                 try:
                     await callback(interaction, arg1, arg2)
                 except Exception as e:
                     print(f"❌ スラッシュコマンド /{name} 実行エラー: {e}")
                     await _handle_slash_error(interaction)
+
             tree.add_command(cmd_two_params)
-        
+
         elif param_count == 3:
             # 3つのパラメータの場合
             param1 = parameters[0]
             param2 = parameters[1]
             param3 = parameters[2]
-            
+
             @app_commands.command(name=name, description=description)
             @app_commands.describe(**describe_dict)
-            async def cmd_three_params(interaction: discord.Interaction, arg1: typing.Any, arg2: typing.Any, arg3: typing.Any):
+            async def cmd_three_params(
+                interaction: discord.Interaction,
+                arg1: typing.Any,
+                arg2: typing.Any,
+                arg3: typing.Any,
+            ):
                 try:
                     await callback(interaction, arg1, arg2, arg3)
                 except Exception as e:
                     print(f"❌ スラッシュコマンド /{name} 実行エラー: {e}")
                     await _handle_slash_error(interaction)
+
             tree.add_command(cmd_three_params)
-        
+
         else:
             # 4つ以上のパラメータの場合（一般的なケース）
             @app_commands.command(name=name, description=description)
@@ -345,6 +391,7 @@ def registerSlashCommand(bot, name, description, callback, parameters=None):
                 except Exception as e:
                     print(f"❌ スラッシュコマンド /{name} 実行エラー: {e}")
                     await _handle_slash_error(interaction)
+
             tree.add_command(cmd_multi_params)
     else:
         # パラメータなしの場合（従来通り）
@@ -355,8 +402,9 @@ def registerSlashCommand(bot, name, description, callback, parameters=None):
             except Exception as e:
                 print(f"❌ スラッシュコマンド /{name} 実行エラー: {e}")
                 await _handle_slash_error(interaction)
+
         tree.add_command(cmd_no_params)
-    
+
     print(f"✔ スラッシュコマンド /{name} を登録しました。")
 
 
@@ -365,13 +413,11 @@ async def _handle_slash_error(interaction: discord.Interaction):
     try:
         if not interaction.response.is_done():
             await interaction.response.send_message(
-                "❌ コマンドの実行中にエラーが発生しました。", 
-                ephemeral=True
+                "❌ コマンドの実行中にエラーが発生しました。", ephemeral=True
             )
         else:
             await interaction.followup.send(
-                "❌ コマンドの実行中にエラーが発生しました。", 
-                ephemeral=True
+                "❌ コマンドの実行中にエラーが発生しました。", ephemeral=True
             )
     except:
         pass
@@ -379,6 +425,7 @@ async def _handle_slash_error(interaction: discord.Interaction):
 
 # --- Botイベントハンドラ管理 ---
 _event_handlers = {}
+
 
 def registerBotEvent(bot, event_name: str, handler):
     if bot is None:
@@ -395,11 +442,14 @@ def registerBotEvent(bot, event_name: str, handler):
         return
     handler_id = id(handler)
     _event_handlers[event_name][handler_id] = handler
+
     # プロキシを再生成
     async def _event_proxy(*args, **kwargs):
         for h in list(_event_handlers[event_name].values()):
             await h(*args, **kwargs)
+
     setattr(bot, event_name, _event_proxy)
+
 
 def unregisterBotEvent(bot, event_name: str, handler):
     if bot is None:
@@ -409,16 +459,19 @@ def unregisterBotEvent(bot, event_name: str, handler):
         handler_id = id(handler)
         if handler_id in _event_handlers[event_name]:
             del _event_handlers[event_name][handler_id]
+
     # プロキシを再生成
     async def _event_proxy(*args, **kwargs):
         for h in list(_event_handlers[event_name].values()):
             await h(*args, **kwargs)
+
     setattr(bot, event_name, _event_proxy)
 
 
 # Bot起動
 def main():
     from plugins import handle_custom_command
+
     global bot_instance, bot_start_time, server_count, bot_status
 
     load_dotenv()
@@ -431,11 +484,15 @@ def main():
         print("[INFO] Render/--render検出: 先にFlaskサーバーを起動します")
         flask_thread = threading.Thread(target=run_flask, daemon=True)
         flask_thread.start()
-        print("[INFO] Flaskサーバー起動後、180秒待機してからGithubからdatabase.jsonを取得します")
+        print(
+            "[INFO] Flaskサーバー起動後、180秒待機してからGithubからdatabase.jsonを取得します"
+        )
         import time
+
         time.sleep(180)
         # Githubからdatabase.jsonを取得
         import asyncio as _asyncio
+
         _asyncio.run(fetch_latest_auto_commit_and_load_json())
         print("[INFO] database.json取得後、Discord Botを起動します")
     else:
@@ -456,7 +513,17 @@ def main():
     intents.voice_states = True
     intents.presences = True
     intents.typing = True
-    bot: commands.Bot = commands.Bot(command_prefix=PREFIX, intents=intents, help_command=None)
+    bot = commands.Bot(
+        command_prefix=PREFIX,
+        intents=intents,
+        help_command=None,
+        allowed_installs=discord.app_commands.AppInstallationType(
+            guild=True, user=True
+        ),
+        allowed_contexts=app_commands.AppCommandContext(
+            guild=True, dm_channel=True, private_channel=True
+        ),
+    )
     bot_instance = bot
 
     async def start_periodic_tasks():
@@ -476,7 +543,9 @@ def main():
             owner_id = app_info.owner.id
             config["globalAdmins"] = [str(owner_id)]
             save_config(config)
-            print(f"✔ Botオーナー {app_info.owner} ({owner_id}) をグローバル管理者に自動登録しました。")
+            print(
+                f"✔ Botオーナー {app_info.owner} ({owner_id}) をグローバル管理者に自動登録しました。"
+            )
         await load_plugins(bot)
         try:
             print("⏳ スラッシュコマンドを同期中...")
@@ -510,7 +579,7 @@ def main():
 def isCommand(cmd_name):
     global bot_instance
     # 先頭の#を除去
-    if bot_instance and hasattr(bot_instance, 'commands'):
+    if bot_instance and hasattr(bot_instance, "commands"):
         return any(c.name == cmd_name for c in bot_instance.commands)
     return False
 
@@ -523,6 +592,8 @@ if "--render" in sys.argv:
 
 # GitHub API push機能（旧push_only.pyの内容を統合）
 push_executed = False
+
+
 def run_push():
     """GitHub APIを使用してdatabase.jsonをプッシュする"""
     global push_executed
@@ -530,25 +601,25 @@ def run_push():
         push_executed = True
         try:
             print("[INFO] database.jsonをGitHubにプッシュ中...")
-            
+
             # 環境変数とコンフィグ
             GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
             REPO = "gamelist1990/Discord"
             FILE_PATH = "database.json"
             BRANCH = "main"
             COMMIT_MESSAGE = f"auto: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} WebAPIでdatabase.jsonを更新"
-            
+
             if not GITHUB_TOKEN:
                 print("[ERROR] GITHUB_TOKEN環境変数が必要です。")
                 return
-            
+
             # --- 直近1時間以内のauto:コミットがあればpushしない ---
             print(f"[INFO] 直近1時間以内のauto:コミットを確認中...")
-            since_time = (datetime.utcnow() - timedelta(hours=1)).isoformat() + 'Z'
+            since_time = (datetime.utcnow() - timedelta(hours=1)).isoformat() + "Z"
             commits_url = f"https://api.github.com/repos/{REPO}/commits?path={FILE_PATH}&sha={BRANCH}&since={since_time}"
             headers = {
                 "Authorization": f"token {GITHUB_TOKEN}",
-                "Accept": "application/vnd.github+json"
+                "Accept": "application/vnd.github+json",
             }
             r_commits = requests.get(commits_url, headers=headers)
             if r_commits.status_code == 200:
@@ -556,36 +627,40 @@ def run_push():
                 for commit in commits:
                     msg = commit.get("commit", {}).get("message", "")
                     if msg.startswith("auto:"):
-                        print("[INFO] 直近1時間以内にauto:コミットが存在するためpushをスキップします。")
+                        print(
+                            "[INFO] 直近1時間以内にauto:コミットが存在するためpushをスキップします。"
+                        )
                         print("✔ ファイル内容は最新の状態です（autoコミット済み）")
                         return
             else:
-                print(f"[WARN] コミット履歴の取得に失敗: {r_commits.status_code} {r_commits.text[:200]}")
-            
+                print(
+                    f"[WARN] コミット履歴の取得に失敗: {r_commits.status_code} {r_commits.text[:200]}"
+                )
+
             # ファイルの存在確認
             if not os.path.exists(FILE_PATH):
                 print(f"[ERROR] ファイル '{FILE_PATH}' が見つかりません。")
                 return
-                
+
             print(f"[INFO] ファイル '{FILE_PATH}' をbase64エンコード中...")
             # ファイル内容をbase64エンコード
             with open(FILE_PATH, "rb") as f:
                 content = base64.b64encode(f.read()).decode()
             print(f"[INFO] エンコード完了。データ長: {len(content)} 文字")
-            
+
             headers = {
                 "Authorization": f"token {GITHUB_TOKEN}",
-                "Accept": "application/vnd.github+json"
+                "Accept": "application/vnd.github+json",
             }
-            
+
             print(f"[INFO] 現在のファイルSHAを取得中... (branch: {BRANCH})")
             # 現在のファイルSHAを取得
             r = requests.get(
                 f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}?ref={BRANCH}",
-                headers=headers
+                headers=headers,
             )
             print(f"[DEBUG] GET /contents レスポンス: {r.status_code} {r.text[:200]}")
-            
+
             if r.status_code == 200:
                 response_data = r.json()
                 sha = response_data["sha"]
@@ -597,49 +672,55 @@ def run_push():
                 sha = None
                 current_content = None
             else:
-                print(f"[ERROR] GitHub APIからファイル情報の取得に失敗: {r.status_code} - {r.text}")
+                print(
+                    f"[ERROR] GitHub APIからファイル情報の取得に失敗: {r.status_code} - {r.text}"
+                )
                 return
-            
+
             # 内容の比較
             if current_content is not None:
                 print(f"[INFO] ローカルファイルとGitHubファイルの内容を比較中...")
                 # GitHubから取得した内容は改行文字が含まれている可能性があるため、それを除去して比較
-                github_content_cleaned = current_content.replace('\n', '')
+                github_content_cleaned = current_content.replace("\n", "")
                 if content == github_content_cleaned:
-                    print(f"[INFO] ファイル内容に変更がありません。更新をスキップします。")
+                    print(
+                        f"[INFO] ファイル内容に変更がありません。更新をスキップします。"
+                    )
                     print("✔ ファイル内容は最新の状態です")
                     return
                 else:
-                    print(f"[INFO] ファイル内容に変更が検出されました。更新を続行します。")
+                    print(
+                        f"[INFO] ファイル内容に変更が検出されました。更新を続行します。"
+                    )
             else:
-                print(f"[INFO] 新規ファイルのため、内容比較をスキップして作成を続行します。")
-            
+                print(
+                    f"[INFO] 新規ファイルのため、内容比較をスキップして作成を続行します。"
+                )
+
             # ファイルを更新
             print(f"[INFO] ファイルを更新中... (commit message: '{COMMIT_MESSAGE}')")
-            data = {
-                "message": COMMIT_MESSAGE,
-                "content": content,
-                "branch": BRANCH
-            }
+            data = {"message": COMMIT_MESSAGE, "content": content, "branch": BRANCH}
             # 既存ファイルの場合のみSHAを追加
             if sha is not None:
                 data["sha"] = sha
             r = requests.put(
                 f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}",
                 headers=headers,
-                json=data
+                json=data,
             )
             print(f"[DEBUG] PUT /contents レスポンス: {r.status_code} {r.text[:200]}")
             if r.status_code in (200, 201):
                 print("✔ WebAPIでdatabase.jsonを更新しました")
             else:
                 print(f"❌ エラー: {r.text}")
-                
+
         except Exception as e:
             print(f"[ERROR] database.jsonプッシュ失敗: {e}")
 
+
 def is_render_env():
     return os.environ.get("RENDER", "").lower() in ("1", "true", "yes")
+
 
 async def fetch_latest_auto_commit_and_load_json():
     GITHUB_REPO = os.environ.get("GITHUB_REPO", "<user>/<repo>")
@@ -650,28 +731,44 @@ async def fetch_latest_auto_commit_and_load_json():
         print("[WARN] GITHUB_TOKENまたはGITHUB_REPOが未設定です。スキップします。")
         return
     commits_url = f"https://api.github.com/repos/{GITHUB_REPO}/commits?path={FILE_PATH}&sha={BRANCH}&per_page=10"
-    headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github+json"}
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github+json",
+    }
     resp = requests.get(commits_url, headers=headers)
     if resp.status_code != 200:
         print(f"[ERROR] GitHubコミット取得失敗: {resp.status_code} {resp.text[:200]}")
         return
     commits = resp.json()
-    auto_commit = next((c for c in commits if c.get("commit", {}).get("message", "").startswith("auto:")), None)
+    auto_commit = next(
+        (
+            c
+            for c in commits
+            if c.get("commit", {}).get("message", "").startswith("auto:")
+        ),
+        None,
+    )
     if not auto_commit:
         print("[INFO] auto:コミットが見つかりませんでした。")
         return
     sha = auto_commit["sha"]
-    file_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{FILE_PATH}?ref={sha}"
+    file_url = (
+        f"https://api.github.com/repos/{GITHUB_REPO}/contents/{FILE_PATH}?ref={sha}"
+    )
     file_resp = requests.get(file_url, headers=headers)
     if file_resp.status_code != 200:
-        print(f"[ERROR] database.json取得失敗: {file_resp.status_code} {file_resp.text[:200]}")
+        print(
+            f"[ERROR] database.json取得失敗: {file_resp.status_code} {file_resp.text[:200]}"
+        )
         return
     file_data = file_resp.json()
     import base64
+
     content = base64.b64decode(file_data["content"]).decode("utf-8")
     with open(FILE_PATH, "w", encoding="utf-8") as f:
         f.write(content)
     print("[INFO] 最新autoコミットのdatabase.jsonをロードしました。")
+
 
 if __name__ == "__main__":
     try:
@@ -679,6 +776,7 @@ if __name__ == "__main__":
     except Exception as e:
         print("[FATAL ERROR] index.pyで未処理の例外が発生しました:")
         import traceback
+
         traceback.print_exc()
         if RUN_PUSH_ON_EXIT:
             try:
