@@ -1,3 +1,4 @@
+
 from typing import Callable, Awaitable
 from discord.ext.commands import Bot, Command, Context
 from discord import app_commands
@@ -283,3 +284,37 @@ def registerSlashCommand(
     print(f"✔ スラッシュコマンド /{name} を登録しました。 (op_level={op_level}, user={user})")
 
 
+
+
+
+def registerMessageCommand(bot, name, callback, description=None):
+    """
+    メッセージコンテキストメニューコマンドを動的に登録する関数。
+    name: コマンド名
+    callback: (interaction, message) -> awaitable
+    description: オプション（未使用、将来用）
+    """
+    import discord
+    tree = bot.tree if hasattr(bot, "tree") else None
+    if not tree:
+        print("❌ スラッシュコマンドツリーが見つかりません")
+        return
+    # 既存のコマンドがある場合は削除（キャッシュ利用）
+    try:
+        cache_key = ("message", name)
+        existing_command = _COMMAND_CACHE.get(cache_key)
+        if existing_command is None:
+            existing_command = tree.get_command(name)
+            _COMMAND_CACHE[cache_key] = existing_command
+        if existing_command:
+            tree.remove_command(name)
+            _COMMAND_CACHE[cache_key] = None
+    except Exception as e:
+        print(f"(info) 既存メッセージコマンド削除時の例外: {e}")
+    @discord.app_commands.context_menu(name=name)
+    async def message_context_menu(interaction: discord.Interaction, message: discord.Message):
+        res = callback(interaction, message)
+        if hasattr(res, "__await__"):
+            await res
+    tree.add_command(message_context_menu)
+    print(f"✔ メッセージコマンド '{name}' を登録しました。")

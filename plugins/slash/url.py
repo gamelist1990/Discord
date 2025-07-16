@@ -32,10 +32,14 @@ def setup(bot):
                 ephemeral=False
             )
         except Exception as e:
+            error_msg = f"❌ プレビュー画像の取得に失敗しました: {e}"
             try:
-                await interaction.response.send_message(f"❌ プレビュー画像の取得に失敗しました: {e}", ephemeral=True)
+                await interaction.response.send_message(error_msg, ephemeral=True)
             except Exception:
-                await interaction.followup.send(f"❌ プレビュー画像の取得に失敗しました: {e}", ephemeral=True)
+                try:
+                    await interaction.followup.send(error_msg, ephemeral=True)
+                except Exception:
+                    print(error_msg)
 
     async def url_callback(interaction: discord.Interaction):
         view = ModalInputView(

@@ -186,30 +186,40 @@ class ModalInputView(View):
                 recipient = getattr(self.parent, "recipient", None)
                 if recipient is None:
                     recipient = interaction.user
-            # Embed返却対応
-            if self.parent.on_submit_embed:
-                embed = self.parent.on_submit_embed
-                if callable(embed):
-                    embed = embed(interaction, self.input.value, recipient, self.parent)
-                    if inspect.isawaitable(embed):
-                        embed = await embed
-                if isinstance(embed, discord.Embed):
-                    await interaction.response.send_message(
-                        embed=embed, ephemeral=self.parent.ephemeral
+            try:
+                # Embed返却対応
+                if self.parent.on_submit_embed:
+                    embed = self.parent.on_submit_embed
+                    if callable(embed):
+                        embed = embed(interaction, self.input.value, recipient, self.parent)
+                        if inspect.isawaitable(embed):
+                            embed = await embed
+                    if isinstance(embed, discord.Embed):
+                        await interaction.response.send_message(
+                            embed=embed, ephemeral=self.parent.ephemeral
+                        )
+                    else:
+                        await interaction.response.send_message(
+                            content=str(embed), ephemeral=self.parent.ephemeral
+                        )
+                elif self.parent.on_submit:
+                    await self.parent.on_submit(
+                        interaction, self.input.value, recipient, self.parent
                     )
                 else:
                     await interaction.response.send_message(
-                        content=str(embed), ephemeral=self.parent.ephemeral
+                        f"入力値: {self.input.value}", ephemeral=self.parent.ephemeral
                     )
-            elif self.parent.on_submit:
-                await self.parent.on_submit(
-                    interaction, self.input.value, recipient, self.parent
-                )
-            else:
-                await interaction.response.send_message(
-                    f"入力値: {self.input.value}", ephemeral=self.parent.ephemeral
-                )
-            if self.parent.after_submit:
-                await self.parent.after_submit(
-                    interaction, self.input.value, recipient, self.parent
-                )
+                if self.parent.after_submit:
+                    await self.parent.after_submit(
+                        interaction, self.input.value, recipient, self.parent
+                    )
+            except Exception as e:
+                error_msg = f"❌ エラーが発生しました: {e}"
+                try:
+                    await interaction.response.send_message(error_msg, ephemeral=True)
+                except Exception:
+                    try:
+                        await interaction.followup.send(error_msg, ephemeral=True)
+                    except Exception:
+                        print(error_msg)
