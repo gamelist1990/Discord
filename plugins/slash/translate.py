@@ -2,8 +2,6 @@ import discord
 from plugins import registerMessageCommand
 import requests
 
-# 無料の翻訳API LibreTranslateを利用（APIキー不要・制限あり）
-TRANSLATE_API_URL = "https://libretranslate.de/translate"
 
 async def translate_message(interaction: discord.Interaction, message: discord.Message):
     text = message.content.strip()
@@ -11,6 +9,10 @@ async def translate_message(interaction: discord.Interaction, message: discord.M
         await interaction.response.send_message("❌ 翻訳するテキストがありません。", ephemeral=True)
         return
     try:
+        # まず「考え中…」の一時メッセージを送信
+       # print(f"[DEBUG] 翻訳開始: text='{text}'")
+        await interaction.response.send_message("🤔 翻訳中…", ephemeral=True)
+
         # ひらがな・カタカナが含まれていれば日本語、それ以外は英語とみなす
         if any(c for c in text if '\u3040' <= c <= '\u30ff'):
             lang = "ja"
@@ -18,14 +20,20 @@ async def translate_message(interaction: discord.Interaction, message: discord.M
         else:
             lang = "en"
             target = "ja"
-        from urllib.parse import quote
-        url = f"https://script.google.com/macros/s/AKfycbxPh_IjkSYpkfxHoGXVzK4oNQ2Vy0uRByGeNGA6ti3M7flAMCYkeJKuoBrALNCMImEi_g/exec?text={quote(text)}&from={lang}&to={target}"
-        resp = requests.get(url, timeout=20)
+        url = "https://script.google.com/macros/s/AKfycbxPh_IjkSYpkfxHoGXVzK4oNQ2Vy0uRByGeNGA6ti3M7flAMCYkeJKuoBrALNCMImEi_g/exec"
+        payload = {"text": text, "from": lang, "to": target}
+        headers = {"Content-Type": "application/json"}
+        #print(f"[DEBUG] POST {url} payload={payload}")
+        resp = requests.post(url, json=payload, headers=headers, timeout=20)
+        #print(f"[DEBUG] status={resp.status_code} response={resp.text}")
         resp.raise_for_status()
         data = resp.json()
         translated = data.get("translation")
+        #print(f"[DEBUG] 翻訳結果: {translated}")
         if not translated:
             raise Exception("翻訳結果が取得できませんでした。")
+
+        # Markdown判定による自動code block囲みを廃止し、そのまま表示
         embed = discord.Embed(
             title=f"翻訳 {lang} → {target}",
             description=translated,
@@ -46,19 +54,25 @@ async def translate_message(interaction: discord.Interaction, message: discord.M
             name=f"{getattr(author, 'display_name', getattr(author, 'name', ''))}",
             icon_url=avatar_url
         )
-        await interaction.response.send_message(
-            embed=embed,
-            ephemeral=True
-        )
+
+        # 画像のみのメッセージの場合は画像もEmbedに表示
+        if message.attachments:
+            # 最初の画像のみ表示（複数ある場合）
+            for att in message.attachments:
+                if att.content_type and att.content_type.startswith("image"):
+                    embed.set_image(url=att.url)
+                    break
+
+        # 一時メッセージを「翻訳完了」に編集し、その後Embedを表示
+        await interaction.edit_original_response(content="✅ 翻訳完了", embed=embed)
     except Exception as e:
         error_msg = f"❌ 翻訳に失敗しました: {e}"
+        print(error_msg)
+        # 既存の一時メッセージをエラー表示に編集
         try:
-            await interaction.response.send_message(error_msg, ephemeral=True)
-        except Exception:
-            try:
-                await interaction.followup.send(error_msg, ephemeral=True)
-            except Exception:
-                print(error_msg)
+            await interaction.edit_original_response(content=error_msg, embed=None)
+        except Exception as ee:
+            print(f"[DEBUG] edit_original_response failed: {ee}")
 
 def setup(bot):
     registerMessageCommand(
