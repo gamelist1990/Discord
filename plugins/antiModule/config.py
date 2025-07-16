@@ -10,7 +10,7 @@ class AntiCheatConfig:
     DEFAULT_CONFIG = {
         "alert_channel": None,
         "bypass_role": None,
-        "enabled": True,
+        "enabled": False,
         "detection_settings": {
             "text_spam": True,
             "image_spam": True,
@@ -18,7 +18,7 @@ class AntiCheatConfig:
             "token_spam": True,
             "timebase_spam": True,
             "typing_bypass": True,
-            "forward_spam": True,  # 転送スパム検知を追加
+            "forward_spam": True,  
         }
     }
     

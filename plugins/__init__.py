@@ -56,10 +56,11 @@ async def handle_custom_command(message:discord.Message):
 # --- 既存のregister_command等は無効化またはコメントアウト可 ---
 
 
-def registerSlashCommand(bot, name, description, callback, parameters=None, op_level=OP_EVERYONE):
+def registerSlashCommand(bot, name, description, callback, parameters=None, op_level=OP_EVERYONE, local=False):
     """
     スラッシュコマンドを動的に登録する関数。
     op_level: 必要なopレベル（0=全員, 1=ロール, 2=Staff, 3=ギルド管理者, 4=グローバル管理者）
+    local: Trueでユーザーインストール型（ユーザーコマンド）として登録
     """
     import typing
     import discord.app_commands as app_commands
@@ -68,21 +69,32 @@ def registerSlashCommand(bot, name, description, callback, parameters=None, op_l
         print("❌ スラッシュコマンドツリーが見つかりません")
         return
     import inspect
+
     def wrapped_callback(interaction, *args, **kwargs):
         member = interaction.user if hasattr(interaction, "user") else None
         user_id = str(member.id) if member and hasattr(member, 'id') else None
         now = time.time()
         key = (user_id, name, 'no_permission')
-        if member and not has_op(member, op_level):
-            last = _error_notify_history.get(key, 0)
-            if now - last > _ERROR_NOTIFY_WINDOW:
-                _error_notify_history[key] = now
-                return interaction.response.send_message("❌ 権限がありません。", ephemeral=True)
-            return None  # スルー
+        # local=Trueかつop_level=Noneなら権限チェックなし
+        if not (local and op_level is None):
+            if member and not has_op(member, op_level):
+                last = _error_notify_history.get(key, 0)
+                if now - last > _ERROR_NOTIFY_WINDOW:
+                    _error_notify_history[key] = now
+                    return interaction.response.send_message("❌ 権限がありません。", ephemeral=True)
+                return None  # スルー
         res = callback(interaction, *args, **kwargs)
         if inspect.isawaitable(res):
             return res
         return None
+
+    def _add_command(cmd):
+        # local=Trueかつop_level=Noneならユーザーコマンドとして登録
+        if local and op_level is None:
+            tree.add_command(cmd, type=discord.AppCommandType.user)
+        else:
+            tree.add_command(cmd)
+
     # 既存のコマンドがある場合は削除
     try:
         existing_command = tree.get_command(name)
@@ -106,7 +118,7 @@ def registerSlashCommand(bot, name, description, callback, parameters=None, op_l
                         res = wrapped_callback(interaction, user)
                         if res is not None:
                             await res
-                    tree.add_command(cmd_member_required)
+                    _add_command(cmd_member_required)
                 else:
                     @app_commands.command(name=name, description=description)
                     @app_commands.describe(**describe_dict)
@@ -114,7 +126,7 @@ def registerSlashCommand(bot, name, description, callback, parameters=None, op_l
                         res = wrapped_callback(interaction, user)
                         if res is not None:
                             await res
-                    tree.add_command(cmd_member_optional)
+                    _add_command(cmd_member_optional)
             elif param_type == str:
                 if param_required:
                     @app_commands.command(name=name, description=description)
@@ -123,7 +135,7 @@ def registerSlashCommand(bot, name, description, callback, parameters=None, op_l
                         res = wrapped_callback(interaction, text)
                         if res is not None:
                             await res
-                    tree.add_command(cmd_str_required)
+                    _add_command(cmd_str_required)
                 else:
                     @app_commands.command(name=name, description=description)
                     @app_commands.describe(**describe_dict)
@@ -131,7 +143,7 @@ def registerSlashCommand(bot, name, description, callback, parameters=None, op_l
                         res = wrapped_callback(interaction, text)
                         if res is not None:
                             await res
-                    tree.add_command(cmd_str_optional)
+                    _add_command(cmd_str_optional)
             elif param_type == int:
                 if param_required:
                     @app_commands.command(name=name, description=description)
@@ -140,7 +152,7 @@ def registerSlashCommand(bot, name, description, callback, parameters=None, op_l
                         res = wrapped_callback(interaction, number)
                         if res is not None:
                             await res
-                    tree.add_command(cmd_int_required)
+                    _add_command(cmd_int_required)
                 else:
                     @app_commands.command(name=name, description=description)
                     @app_commands.describe(**describe_dict)
@@ -148,7 +160,7 @@ def registerSlashCommand(bot, name, description, callback, parameters=None, op_l
                         res = wrapped_callback(interaction, number)
                         if res is not None:
                             await res
-                    tree.add_command(cmd_int_optional)
+                    _add_command(cmd_int_optional)
             else:
                 @app_commands.command(name=name, description=description)
                 @app_commands.describe(**describe_dict)
@@ -156,7 +168,7 @@ def registerSlashCommand(bot, name, description, callback, parameters=None, op_l
                     res = wrapped_callback(interaction, value)
                     if res is not None:
                         await res
-                tree.add_command(cmd_other)
+                _add_command(cmd_other)
         elif param_count == 2:
             param1 = parameters[0]
             param2 = parameters[1]
@@ -166,7 +178,7 @@ def registerSlashCommand(bot, name, description, callback, parameters=None, op_l
                 res = wrapped_callback(interaction, arg1, arg2)
                 if res is not None:
                     await res
-            tree.add_command(cmd_two_params)
+            _add_command(cmd_two_params)
         elif param_count == 3:
             param1 = parameters[0]
             param2 = parameters[1]
@@ -177,7 +189,7 @@ def registerSlashCommand(bot, name, description, callback, parameters=None, op_l
                 res = wrapped_callback(interaction, arg1, arg2, arg3)
                 if res is not None:
                     await res
-            tree.add_command(cmd_three_params)
+            _add_command(cmd_three_params)
         else:
             @app_commands.command(name=name, description=description)
             @app_commands.describe(**describe_dict)
@@ -185,12 +197,12 @@ def registerSlashCommand(bot, name, description, callback, parameters=None, op_l
                 res = wrapped_callback(interaction)
                 if res is not None:
                     await res
-            tree.add_command(cmd_multi_params)
+            _add_command(cmd_multi_params)
     else:
         @app_commands.command(name=name, description=description)
         async def cmd_no_params(interaction: discord.Interaction):
             res = wrapped_callback(interaction)
             if res is not None:
                 await res
-        tree.add_command(cmd_no_params)
-    print(f"✔ スラッシュコマンド /{name} を登録しました。")
+        _add_command(cmd_no_params)
+    print(f"✔ スラッシュコマンド /{name} を登録しました。 (local={local}, op_level={op_level})")
