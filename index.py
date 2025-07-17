@@ -480,19 +480,16 @@ def main():
 
     # --renderオプションまたはRENDER環境変数が指定されている場合--
     is_render = is_render_env() or ("--render" in sys.argv)
+    # Flaskサーバーは常にバックグラウンドで起動
+    print("[INFO] Flaskサーバーをバックグラウンドで起動します")
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
     if is_render:
-        print("[INFO] Render/--render検出: 先にFlaskサーバーを起動します")
-        flask_thread = threading.Thread(target=run_flask, daemon=True)
-        flask_thread.start()
-        print(
-            "[INFO] Flaskサーバー起動後、180秒待機してからGithubからdatabase.jsonを取得します"
-        )
+        print("[INFO] Render/--render検出: Flaskサーバー起動後、180秒待機してからGithubからdatabase.jsonを取得します")
         import time
-
         time.sleep(180)
         # Githubからdatabase.jsonを取得
         import asyncio as _asyncio
-
         _asyncio.run(fetch_latest_auto_commit_and_load_json())
         print("[INFO] database.json取得後、Discord Botを起動します")
     else:

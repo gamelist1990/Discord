@@ -10,6 +10,30 @@ import utils
 
 
 def register_api_routes(app: Flask, bot_instance=None):
+    from API.youtubeEmbed import YoutubeEmbed
+
+    @app.route("/youtube/<video_id>", methods=["GET"])
+    def api_youtube_embed(video_id):
+        """YouTube動画の埋め込み用OGP HTMLまたはリダイレクトを返すAPI"""
+        ua = request.headers.get('User-Agent', '')
+        print(f"[api_youtube_embed][DEBUG] video_id={video_id} User-Agent={ua}")
+        ua_lc = ua.lower()
+        bot_keywords = ["discord", "twitterbot", "slackbot", "facebookexternalhit", "telegrambot", "embed", "bot", "crawler", "spider"]
+        is_bot = any(kw in ua_lc for kw in bot_keywords)
+        print(f"[api_youtube_embed][DEBUG] is_bot={is_bot}")
+        if is_bot:
+            html = YoutubeEmbed.get_ogp_html(video_id, user_agent=ua)
+            print(f"[api_youtube_embed][DEBUG] OGP HTML returned for bot UA")
+            return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
+        # 通常アクセスはYouTubeへリダイレクト
+        info = YoutubeEmbed.get_embed_info(video_id)
+        print(f"[api_youtube_embed][DEBUG] info={info}")
+        if info.get("success"):
+            print(f"[api_youtube_embed][DEBUG] Redirecting to {info['url']}")
+            return '', 302, {'Location': info["url"]}
+        else:
+            print(f"[api_youtube_embed][DEBUG] Invalid YouTube Video ID")
+            return 'Invalid YouTube Video ID', 400
     """
     FlaskアプリケーションにAPIルートを登録する
     
@@ -60,7 +84,8 @@ def register_api_routes(app: Flask, bot_instance=None):
     print("📋 Registered API endpoints:")
     api_routes = [
         ("/api/full-status", "GET", "完全なステータス情報"),
-        ("/database", "GET", "データベース読み取り")
+        ("/database", "GET", "データベース読み取り"),
+        ("/youtube/<video_id>", "GET", "YouTube埋め込み情報取得")
     ]
     
     for route, method, description in api_routes:

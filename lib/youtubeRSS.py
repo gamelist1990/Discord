@@ -81,11 +81,14 @@ class YoutubeVideoDetail(YoutubeVideoInfo):
     def __init__(self, video_id: str, title: str, author: str, published: str, url: str,
                  description: Optional[str] = None, thumbnails: Optional[List[str]] = None,
                  image_url: Optional[str] = None, live_status: Optional[YoutubeLiveStatus] = None,
-                 type: Optional[YoutubeVideoType] = None):
+                 type: Optional[YoutubeVideoType] = None,
+                 view_count: Optional[int] = None, like_count: Optional[int] = None):
         super().__init__(video_id, title, author, published, url, live_status, type)
         self.description = description
         self.thumbnails = thumbnails or []
         self.image_url = image_url
+        self.view_count = view_count
+        self.like_count = like_count
     def __repr__(self):
         return f"<YoutubeVideoDetail {self.video_id} {self.title} {self.type} {self.live_status} {self.image_url}>"
 
@@ -237,6 +240,60 @@ class YoutubeRssApi:
             description = description.group(1).replace('\\n', '\n') if description else ''
             thumbnails = [m.replace('\\/', '/') for m in re.findall(r'"thumbnailUrl":"(https://i\.ytimg\.com[^"]+)"', html)]
             image_url = thumbnails[0] if thumbnails else f'https://i.ytimg.com/vi/{video_id}/hqdefault.jpg'
+            # --- BeautifulSoup方式は廃止。正規表現・JSON断片のみで検知 ---
+            # 視聴数（日本語表記）
+            view_count_text = None
+            m_simple_view = re.search(r'"viewCount":\{"videoViewCountRenderer":\{"viewCount":\{"simpleText":"([\d,]+ 回視聴)"', html)
+            if m_simple_view:
+                view_count_text = m_simple_view.group(1)
+            # fallback: 旧正規表現
+            if not view_count_text:
+                m_view_text = re.search(r'<span[^>]*class="[^"]*bold[^"]*"[^>]*>([\d,]+) 回視聴<', html)
+                if m_view_text:
+                    view_count_text = m_view_text.group(1) + " 回視聴"
+
+            # 投稿日時（metaタグ優先: 正規表現でmetaタグ抽出）
+            published = ''
+            m_meta_upload = re.search(r'<meta[^>]+itemprop=["\']uploadDate["\'][^>]+content=["\']([^"\']+)["\']', html)
+            if m_meta_upload:
+                published = m_meta_upload.group(1)
+            # fallback: 旧正規表現
+            if not published:
+                m_pub = re.search(r'"dateText":\{"simpleText":"([^"]+)"\}', html)
+                if m_pub:
+                    published = m_pub.group(1)
+            # 視聴数（数値）
+            view_count = None
+            m_view = re.search(r'"viewCount":"(\d+)"', html)
+            if m_view:
+                try:
+                    view_count = int(m_view.group(1))
+                except Exception:
+                    view_count = None
+            # いいね数（likeCountのみ検知＋metaタグも対応）
+            like_count_text = None
+            m_like_json = re.search(r'likeCount":"(\d+)"', html)
+            if m_like_json:
+                like_count_text = m_like_json.group(1)
+            # metaタグ fallback
+            if not like_count_text:
+                m_like_meta = re.search(r'<meta[^>]+itemprop=["\']userInteractionCount["\'][^>]+content=["\'](\d+)["\']', html)
+                if m_like_meta:
+                    like_count_text = m_like_meta.group(1)
+            if self.debug_mode:
+                print(f'[DEBUG] like_count_text (likeCount/meta): {like_count_text}')
+            # いいね数（数値）
+            like_count = None
+            if like_count_text:
+                try:
+                    like_count = int(like_count_text.replace(',', ''))
+                except Exception:
+                    like_count = None
+            # 投稿日時
+            published = ''
+            m_pub = re.search(r'"dateText":\{"simpleText":"([^"]+)"\}', html)
+            if m_pub:
+                published = m_pub.group(1)
             # Shorts判定
             is_shorts = False
             if '/shorts/' in url or re.search(r'"canonicalUrl":"https://www.youtube.com/shorts/', html):
@@ -309,13 +366,15 @@ class YoutubeRssApi:
                 video_id=video_id,
                 title=title,
                 author=author,
-                published='',
+                published=published,
                 url=url,
                 description=description,
                 thumbnails=thumbnails,
                 image_url=image_url,
                 type=type_,
                 live_status=live_status,
+                view_count=view_count,
+                like_count=like_count,
             )
         except Exception as e:
             if self.debug_mode:

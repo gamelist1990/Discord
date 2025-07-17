@@ -16,25 +16,35 @@ def setup(bot):
         if not url or not url_pattern.match(url):
             await interaction.response.send_message("❌ 有効なURLを入力してください。", ephemeral=True)
             return
-        # thum.ioの無料APIでサムネイル画像URLを生成
-        # 例: https://image.thum.io/get/https://example.com
+        # TwitterまたはX.comの場合は公式推奨のFxEmbed URLに自動変換して貼るだけ
+        twitter_match = re.match(r"^(https?://)(www\.)?twitter\.com/", url, re.IGNORECASE)
+        x_match = re.match(r"^(https?://)(www\.)?x\.com/", url, re.IGNORECASE)
+        if twitter_match:
+            fx_url = re.sub(r"^(https?://)(www\.)?twitter\.com/", r"https://fxtwitter.com/", url, flags=re.IGNORECASE)
+            await interaction.response.send_message(f"**FxTwitterプレビュー：**\n{fx_url}", ephemeral=False)
+            return
+        elif x_match:
+            fx_url = re.sub(r"^(https?://)(www\.)?x\.com/", r"https://fixupx.com/", url, flags=re.IGNORECASE)
+            await interaction.response.send_message(f"**FixupXプレビュー：**\n{fx_url}", ephemeral=False)
+            return
+        # それ以外は通常通りプレビュー生成
+        await interaction.response.send_message("⏳ プレビュー生成中...", ephemeral=False)
+        message = await interaction.original_response()
         thumb_url = f"https://image.thum.io/get/{url}"
-        # サムネイル画像をダウンロード
         try:
             resp = requests.get(thumb_url, timeout=10)
             resp.raise_for_status()
             img_bytes = io.BytesIO(resp.content)
             img_bytes.seek(0)
             file = discord.File(img_bytes, filename="thumbnail.png")
-            await interaction.response.send_message(
+            await message.edit(
                 content=f"**プレビュー：**\n{url}",
-                file=file,
-                ephemeral=False
+                attachments=[file]
             )
         except Exception as e:
             error_msg = f"❌ プレビュー画像の取得に失敗しました: {e}"
             try:
-                await interaction.response.send_message(error_msg, ephemeral=True)
+                await message.edit(content=error_msg, attachments=[])
             except Exception:
                 try:
                     await interaction.followup.send(error_msg, ephemeral=True)
