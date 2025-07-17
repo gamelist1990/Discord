@@ -33,15 +33,7 @@ def convert_url(url: str) -> str:
             if m:
                 video_id = m.group(1)
         if video_id:
-            # グローバルIP取得
-            try:
-                ip = requests.get("https://api.ipify.org").text.strip()
-                if re.match(r"^\d+\.\d+\.\d+\.\d+$", ip):
-                    base_url = f"http://{ip}"
-                else:
-                    base_url = "https://pexsabas.onrender.com/"  # fallback
-            except Exception:
-                base_url = "https://pexsabas.onrender.com/"
+            base_url = "https://pexsabas.onrender.com/"  # fallback
             return f"YouTube埋め込み用URL: {base_url}/youtube/{video_id}"
         else:
             return "❌ 有効なYouTube動画URLではありません。"
