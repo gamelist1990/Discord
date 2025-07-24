@@ -106,7 +106,10 @@
             "message": "70違反ポイントによるサーバーから追放です。"
           }
         ]
-      }
+      },
+      "whitelist_channels": [
+        1111947939661754439
+      ]
     },
     "staffRole": "1340318302936764478",
     "alertChannel": "1384045022210424882",
@@ -131,23 +134,6 @@
         "notification_mode": "embed",
         "last_normal_video_id": "W9qS4lClj3o",
         "last_normal_video_published": "2025-07-09T19:44:34.759615+09:00",
-        "last_short_video_id": null,
-        "last_short_video_published": null,
-        "last_live_video_published": null
-      },
-      {
-        "channel_id": "UCjJmYy279ehSYSwR1A3fXtA",
-        "channel_name": "マグロヘッド",
-        "rss_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCjJmYy279ehSYSwR1A3fXtA",
-        "notification_channel": 1119320648448213043,
-        "interval": 5,
-        "last_live_video_id": null,
-        "last_live_status": "none",
-        "was_live": false,
-        "notification_mode": "url",
-        "created_at": "2025-07-02T23:27:22.365211+09:00",
-        "last_normal_video_id": "GwMpKXbEoqw",
-        "last_normal_video_published": "2025-07-09T19:41:20.352075+09:00",
         "last_short_video_id": null,
         "last_short_video_published": null,
         "last_live_video_published": null
@@ -189,7 +175,27 @@
             "message_id": 1391045849777176819
           }
         ]
-      }
+      },
+      "1057912581949489223": [
+        {
+          "type": "text",
+          "timestamp": 1753225705.661976,
+          "flags_added": 1,
+          "channel_id": 1148749910825504888,
+          "message_id": 1397354623953797160,
+          "violations": []
+        }
+      ],
+      "1324197102343159861": [
+        {
+          "type": "text",
+          "timestamp": 1753245078.224589,
+          "flags_added": 1,
+          "channel_id": 1148749910825504888,
+          "message_id": 1397435877155668100,
+          "violations": []
+        }
+      ]
     },
     "private_chats": {
       "1392396260769796158": {
