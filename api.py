@@ -63,19 +63,19 @@ def register_api_routes(app: Flask, bot_instance=None):
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)}), 500
 
-    @app.route("/api/full-status", methods=["GET"])
-    def api_full_status():
-        """Botとシステムのフルステータス"""
+    @app.route("/consolelog", methods=["GET"])
+    def api_consolelog():
+        """サーバーのコンソールログを取得（管理用）"""
         if not check_api_key():
             return jsonify({'error': 'Forbidden'}), 403
         try:
-            system_info = utils.get_system_info() if hasattr(utils, 'get_system_info') else {}
-            return jsonify({
-                'success': True,
-                'bot': True,
-                'system': system_info,
-                'timestamp': datetime.now().isoformat()
-            })
+            # ログファイルのパス（例: ./server.log）
+            log_path = os.environ.get('LOG_PATH', './server.log')
+            if not os.path.exists(log_path):
+                return jsonify({'success': False, 'error': f'ログファイルが存在しません: {log_path}'}), 404
+            with open(log_path, encoding='utf-8') as f:
+                log_content = f.read()[-10000:]  # 直近10000文字のみ返す
+            return jsonify({'success': True, 'log': log_content, 'timestamp': datetime.now().isoformat()})
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -83,12 +83,10 @@ def register_api_routes(app: Flask, bot_instance=None):
     print("✔ API routes registered successfully")
     print("📋 Registered API endpoints:")
     api_routes = [
-        ("/api/full-status", "GET", "完全なステータス情報"),
         ("/database", "GET", "データベース読み取り"),
-        ("/youtube/<video_id>", "GET", "YouTube埋め込み情報取得")
+        ("/youtube/<video_id>", "GET", "YouTube埋め込み情報取得"),
+        ("/consolelog", "GET", "サーバーコンソールログ取得")
     ]
-    
     for route, method, description in api_routes:
         print(f"  ✔ API登録: {route} (['{method}']) - {description}")
-    
     print("🌐 API server ready")

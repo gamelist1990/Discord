@@ -1,3 +1,4 @@
+
 """
 ユーティリティ関数モジュール
 Discord Botプロジェクトで使用される共通のユーティリティ関数をまとめたモジュール
@@ -6,10 +7,11 @@ Discord Botプロジェクトで使用される共通のユーティリティ関
 import os
 import json
 import platform
+import random
 import psutil
 import socket
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 import subprocess
 import re
@@ -368,3 +370,18 @@ def get_bot_start_time() -> Optional[datetime]:
     """グローバル変数からBotの起動時刻を取得"""
     global _bot_start_time
     return _bot_start_time
+
+
+
+def get_auto_stop_time(start_time: Optional[datetime] = None) -> datetime:
+    """Bot起動時刻からランダムで24時～30時間後の自動停止時刻を返す"""
+    if start_time is None:
+        try:
+            start_time = get_bot_start_time()
+        except Exception:
+            start_time = None
+        if start_time is None:
+            start_time = datetime.now()
+    hours = 24 + random.randint(0, 6)
+    stop_time = start_time + timedelta(hours=hours)
+    return stop_time

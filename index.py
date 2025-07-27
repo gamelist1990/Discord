@@ -7,23 +7,18 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from Unity.Module.discord_event import relay_discord_event
 
 import os
-import json
 import sys
 import asyncio
-import threading
 import typing
 from discord.ext import commands
 import discord
 import importlib.util
 import glob
-import signal
 from datetime import datetime, timedelta
 from collections import defaultdict, deque
 from dotenv import load_dotenv
-from flask import Flask, render_template, jsonify, request
-from functools import wraps
+from flask import Flask, render_template
 from discord import app_commands
-from typing import Any, Callable
 import traceback
 import base64
 import requests
@@ -469,32 +464,76 @@ def unregisterBotEvent(bot, event_name: str, handler):
 
 
 # Bot起動
-def main():
-    from plugins import handle_custom_command
 
+def main():
+    """
+    メイン起動関数。初期化・Flask・Bot・autoStop管理を順序立てて実行。
+    """
+    from plugins import handle_custom_command
     global bot_instance, bot_start_time, server_count, bot_status
 
+    # 1. 初期化
     load_dotenv()
     config = load_config()
     ensure_eula_agreed(config)
 
-    # --renderオプションまたはRENDER環境変数が指定されている場合--
-    is_render = is_render_env() or ("--render" in sys.argv)
-    # Flaskサーバーは常にバックグラウンドで起動
-    print("[INFO] Flaskサーバーをバックグラウンドで起動します")
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-    if is_render:
-        print("[INFO] Render/--render検出: Flaskサーバー起動後、180秒待機してからGithubからdatabase.jsonを取得します")
-        import time
-        time.sleep(180)
-        # Githubからdatabase.jsonを取得
-        import asyncio as _asyncio
-        _asyncio.run(fetch_latest_auto_commit_and_load_json())
-        print("[INFO] database.json取得後、Discord Botを起動します")
+    # 2. Flaskサーバー起動
+    start_flask_server()
+
+    # 3. Render環境ならdatabase.json取得
+    if is_render_env() or ("--render" in sys.argv):
+        handle_render_startup()
     else:
         print("[INFO] 通常起動: Discord Botを直接起動します")
 
+    # 4. autoStop管理
+    if "--autoStop" in sys.argv:
+        start_auto_stop_timer()
+
+    # 5. Discord Bot起動
+    start_discord_bot(handle_custom_command, config)
+
+
+def start_flask_server():
+    print("[INFO] Flaskサーバーをバックグラウンドで起動します")
+    import threading
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+
+
+def handle_render_startup():
+    print("[INFO] Render/--render検出: Flaskサーバー起動後、180秒待機してからGithubからdatabase.jsonを取得します")
+    import time
+    time.sleep(180)
+    import asyncio as _asyncio
+    _asyncio.run(fetch_latest_auto_commit_and_load_json())
+    print("[INFO] database.json取得後、Discord Botを起動します")
+
+
+def start_auto_stop_timer():
+    import threading
+    from utils import get_auto_stop_time, get_bot_start_time
+    def auto_stop_worker():
+        import time
+        start_time = get_bot_start_time()
+        stop_time = get_auto_stop_time(start_time)
+        now = datetime.now()
+        wait_sec = (stop_time - now).total_seconds()
+        print(f"[INFO] --autoStop: {stop_time}に自動停止予定（{wait_sec:.0f}秒後）")
+        if wait_sec > 0:
+            time.sleep(wait_sec)
+        print("[INFO] --autoStop: 停止処理開始。database.jsonをGitHubへプッシュします。")
+        try:
+            run_push()
+        except Exception as e:
+            print(f"[ERROR] autoStop時のrun_push失敗: {e}")
+        print("[INFO] --autoStop: サーバーを終了します。")
+        sys.exit(0)
+    threading.Thread(target=auto_stop_worker, daemon=True).start()
+
+
+def start_discord_bot(handle_custom_command, config):
+    global bot_instance, bot_start_time, server_count, bot_status
     token = os.environ.get("DISCORD_BOT_TOKEN")
     if not token:
         print("❌ 環境変数 DISCORD_BOT_TOKEN が設定されていません。")
@@ -554,7 +593,6 @@ def main():
                     print(f"  - /{cmd.name}: {cmd.description}")
         except Exception as e:
             print(f"❌ スラッシュコマンド同期エラー: {e}")
-        # Unity afterEventにも発火
         relay_discord_event("ready")
 
     @bot.event
@@ -768,6 +806,28 @@ async def fetch_latest_auto_commit_and_load_json():
 
 
 if __name__ == "__main__":
+    LOG_PATH = os.environ.get("LOG_PATH", "./server.log")
+    try:
+        with open(LOG_PATH, "w", encoding="utf-8") as f:
+            f.write("")
+    except Exception as e:
+        print(f"[WARN] server.log初期化失敗: {e}")
+
+    import builtins
+
+    orig_print = builtins.print
+
+    def log_print(*args, **kwargs):
+        orig_print(*args, **kwargs)
+        try:
+            with open(LOG_PATH, "a", encoding="utf-8") as f:
+                msg = " ".join(str(a) for a in args)
+                f.write(msg + "\n")
+        except Exception:
+            pass
+
+    builtins.print = log_print
+
     try:
         main()
     except Exception as e:
