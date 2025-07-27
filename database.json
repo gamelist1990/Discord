@@ -113,7 +113,6 @@
     },
     "staffRole": "1340318302936764478",
     "alertChannel": "1384045022210424882",
-    "hansei_reports": {},
     "youtube_channels": [
       {
         "channel_id": "UCue_c1nQyNwfZa2cLR4fo7g",
@@ -122,25 +121,25 @@
         "interval": 1,
         "last_live_status": "none",
         "last_live_video_id": null,
-        "notification_channel": 1119320648448213043,
-        "rss_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCue_c1nQyNwfZa2cLR4fo7g",
-        "was_live": false,
-        "notification_mode": "embed",
+        "last_live_video_published": null,
         "last_normal_video_id": "W9qS4lClj3o",
         "last_normal_video_published": "2025-07-09T19:44:34.759615+09:00",
         "last_short_video_id": null,
         "last_short_video_published": null,
-        "last_live_video_published": null
+        "notification_channel": 1119320648448213043,
+        "notification_mode": "embed",
+        "rss_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCue_c1nQyNwfZa2cLR4fo7g",
+        "was_live": false
       }
     ],
     "user_flags": {
       "1371278226399428608": [
         {
-          "type": "text",
-          "timestamp": 1751949867.830549,
-          "flags_added": 1,
           "channel_id": 1359115472242610217,
+          "flags_added": 1,
           "message_id": 1392003369287155772,
+          "timestamp": 1751949867.830549,
+          "type": "text",
           "violations": []
         }
       ],
@@ -159,21 +158,21 @@
       },
       "1324197102343159861": [
         {
-          "type": "text",
-          "timestamp": 1753245078.224589,
-          "flags_added": 1,
           "channel_id": 1148749910825504888,
+          "flags_added": 1,
           "message_id": 1397435877155668100,
+          "timestamp": 1753245078.224589,
+          "type": "text",
           "violations": []
         }
       ],
       "1057912581949489223": [
         {
-          "type": "text",
-          "timestamp": 1753225705.661976,
-          "flags_added": 1,
           "channel_id": 1148749910825504888,
+          "flags_added": 1,
           "message_id": 1397354623953797160,
+          "timestamp": 1753225705.661976,
+          "type": "text",
           "violations": []
         }
       ]
