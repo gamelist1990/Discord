@@ -5,7 +5,6 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 # Unityイベント連携
 from Unity.Module.discord_event import relay_discord_event
-
 import os
 import sys
 import asyncio
@@ -14,7 +13,7 @@ from discord.ext import commands
 import discord
 import importlib.util
 import glob
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict, deque
 from dotenv import load_dotenv
 from flask import Flask, render_template
@@ -27,7 +26,6 @@ from waitress import serve
 from DataBase import start_api_key_cleanup_loop
 import utils
 
-# APIサーバー統合用import（不要なAPIマネージャ関連を削除）
 
 CONFIG_FILE_NAME = "config.json"
 EULA_TEXT = """
@@ -619,11 +617,9 @@ def isCommand(cmd_name):
     return False
 
 
-# push_only.py自動実行フラグ
+
+# push_only.py自動実行フラグ（初期化のみ）
 RUN_PUSH_ON_EXIT = False
-if "--render" in sys.argv:
-    RUN_PUSH_ON_EXIT = True
-    print("[INFO] --render指定: 終了時にpush_only.pyを自動実行します")
 
 # GitHub API push機能（旧push_only.pyの内容を統合）
 push_executed = False
@@ -650,7 +646,7 @@ def run_push():
 
             # --- 直近1時間以内のauto:コミットがあればpushしない ---
             print(f"[INFO] 直近1時間以内のauto:コミットを確認中...")
-            since_time = (datetime.utcnow() - timedelta(hours=1)).isoformat() + "Z"
+            since_time = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat().replace("+00:00", "Z")
             commits_url = f"https://api.github.com/repos/{REPO}/commits?path={FILE_PATH}&sha={BRANCH}&since={since_time}"
             headers = {
                 "Authorization": f"token {GITHUB_TOKEN}",
@@ -805,7 +801,13 @@ async def fetch_latest_auto_commit_and_load_json():
     print("[INFO] 最新autoコミットのdatabase.jsonをロードしました。")
 
 
+
 if __name__ == "__main__":
+    # push_only.py自動実行フラグの判定と表示はここでのみ行う
+    if "--render" in sys.argv:
+        RUN_PUSH_ON_EXIT = True
+        print("[INFO] --render指定: 終了時にpush_only.pyを自動実行します")
+
     LOG_PATH = os.environ.get("LOG_PATH", "./server.log")
     try:
         with open(LOG_PATH, "w", encoding="utf-8") as f:

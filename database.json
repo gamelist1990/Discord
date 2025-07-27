@@ -107,7 +107,9 @@
           }
         ]
       },
-      "whitelist_channels": [1111947939661754439]
+      "whitelist_channels": [
+        1111947939661754439
+      ]
     },
     "staffRole": "1340318302936764478",
     "alertChannel": "1384045022210424882",
