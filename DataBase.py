@@ -85,6 +85,55 @@ def has_guild_data(guild_id):
     db = _load_db()
     return str(guild_id) in db
 
+# ユーザー毎のデータ管理機能
+USER_DB_KEY = "userData"
+
+def get_user_data(user_id):
+    """指定されたユーザーのデータを取得"""
+    db = _load_db()
+    user_db = db.setdefault(USER_DB_KEY, {})
+    return user_db.get(str(user_id), {})
+
+def set_user_data(user_id, data):
+    """指定されたユーザーのデータを保存"""
+    db = _load_db()
+    user_db = db.setdefault(USER_DB_KEY, {})
+    user_db[str(user_id)] = data
+    _save_db(db)
+
+def update_user_data(user_id, key, value):
+    """指定されたユーザーの特定のキーのデータを更新"""
+    db = _load_db()
+    user_db = db.setdefault(USER_DB_KEY, {})
+    user_data = user_db.setdefault(str(user_id), {})
+    user_data[key] = value
+    _save_db(db)
+
+def get_user_value(user_id, key, default=None):
+    """指定されたユーザーの特定のキーの値を取得"""
+    user_data = get_user_data(user_id)
+    return user_data.get(key, default)
+
+def delete_user_data(user_id):
+    """指定されたユーザーのデータを削除"""
+    db = _load_db()
+    user_db = db.setdefault(USER_DB_KEY, {})
+    if str(user_id) in user_db:
+        del user_db[str(user_id)]
+        _save_db(db)
+
+def has_user_data(user_id):
+    """指定されたユーザーのデータが存在するかチェック"""
+    db = _load_db()
+    user_db = db.setdefault(USER_DB_KEY, {})
+    return str(user_id) in user_db
+
+def get_all_users():
+    """全てのユーザーIDのリストを取得"""
+    db = _load_db()
+    user_db = db.setdefault(USER_DB_KEY, {})
+    return list(user_db.keys())
+
 # チャンネル設定管理機能
 def get_channel_config(guild_id, channel_id):
     """指定されたチャンネルの設定を取得"""
