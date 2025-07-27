@@ -500,9 +500,9 @@ def start_flask_server():
 
 
 def handle_render_startup():
-    print("[INFO] Render/--render検出: Flaskサーバー起動後、180秒待機してからGithubからdatabase.jsonを取得します")
+    print("[INFO] Render/--render検出: Flaskサーバー起動後、600秒待機してからGithubからdatabase.jsonを取得します")
     import time
-    time.sleep(180)
+    time.sleep(600)
     import asyncio as _asyncio
     _asyncio.run(fetch_latest_auto_commit_and_load_json())
     print("[INFO] database.json取得後、Discord Botを起動します")
