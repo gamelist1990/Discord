@@ -89,6 +89,31 @@ python index.py
 
 初回実行時、EULA（利用規約）への同意が必要です。
 
+### コマンドライン引数
+
+```bash
+# 基本起動
+python index.py
+
+# 自動停止機能付きで起動（24-30時間後に自動停止）
+python index.py --autoStop
+
+# Render環境用起動（600秒待機後にGitHubからデータベース取得）
+python index.py --render
+
+# 自動停止 + Render環境用起動
+python index.py --autoStop --render
+
+# ヘルプを表示
+python index.py --help
+```
+
+**`--autoStop` フラグについて:**
+- ボット起動から24-30時間後（ランダム）に自動停止
+- 停止前に `database.json` をGitHubにプッシュして保存
+- Render等の定期実行環境での利用を想定
+- `GITHUB_TOKEN` 環境変数の設定を推奨
+
 ### コマンド例
 - サーバーで `#help` でコマンド案内
 - スラッシュコマンド： `/` から始まるコマンド

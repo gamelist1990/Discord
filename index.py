@@ -463,12 +463,50 @@ def unregisterBotEvent(bot, event_name: str, handler):
 
 # Bot起動
 
+def show_help():
+    """コマンドライン引数のヘルプを表示"""
+    help_text = """
+Discord Bot - 高機能なDiscord Botプロジェクト
+
+使用方法:
+    python index.py [オプション]
+
+オプション:
+    --autoStop      24-30時間後に自動停止（ランダム）
+                   停止前にdatabase.jsonをGitHubにプッシュ
+                   
+    --render        Render環境用起動モード
+                   600秒待機後にGitHubからdatabase.jsonを取得
+                   
+    --help, -h      このヘルプメッセージを表示
+
+例:
+    python index.py                    # 通常起動
+    python index.py --autoStop        # 自動停止機能付きで起動
+    python index.py --render          # Render環境用起動
+    python index.py --autoStop --render  # 両方の機能を組み合わせ
+
+環境変数:
+    DISCORD_BOT_TOKEN  Discord Botトークン（必須）
+    GITHUB_TOKEN       GitHub API用トークン（--autoStopで推奨）
+    LOG_PATH          ログファイルパス（デフォルト: ./server.log）
+
+詳細: https://github.com/gamelist1990/Discord
+"""
+    print(help_text.strip())
+
+
 def main():
     """
     メイン起動関数。初期化・Flask・Bot・autoStop管理を順序立てて実行。
     """
     from plugins import handle_custom_command
     global bot_instance, bot_start_time, server_count, bot_status
+
+    # 0. ヘルプ表示（最優先）
+    if "--help" in sys.argv or "-h" in sys.argv:
+        show_help()
+        sys.exit(0)
 
     # 1. 初期化
     load_dotenv()
@@ -517,16 +555,26 @@ def start_auto_stop_timer():
         stop_time = get_auto_stop_time(start_time)
         now = datetime.now()
         wait_sec = (stop_time - now).total_seconds()
-        print(f"[INFO] --autoStop: {stop_time}に自動停止予定（{wait_sec:.0f}秒後）")
+        
+        print(f"[INFO] --autoStop: 自動停止機能が有効になりました")
+        print(f"[INFO] --autoStop: 開始時刻: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"[INFO] --autoStop: 停止予定: {stop_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"[INFO] --autoStop: 待機時間: {wait_sec/3600:.1f}時間 ({wait_sec:.0f}秒)")
+        
         if wait_sec > 0:
             time.sleep(wait_sec)
-        print("[INFO] --autoStop: 停止処理開始。database.jsonをGitHubへプッシュします。")
+        
+        print(f"[INFO] --autoStop: 停止時刻に到達しました ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})")
+        print("[INFO] --autoStop: database.jsonをGitHubへプッシュ中...")
         try:
             run_push()
+            print("[INFO] --autoStop: データベースプッシュが完了しました")
         except Exception as e:
-            print(f"[ERROR] autoStop時のrun_push失敗: {e}")
-        print("[INFO] --autoStop: サーバーを終了します。")
+            print(f"[ERROR] --autoStop: データベースプッシュ失敗: {e}")
+        print("[INFO] --autoStop: ボットを正常終了します")
         sys.exit(0)
+    
+    print("[INFO] --autoStop: バックグラウンドタイマーを開始します")
     threading.Thread(target=auto_stop_worker, daemon=True).start()
 
 

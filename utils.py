@@ -385,3 +385,34 @@ def get_auto_stop_time(start_time: Optional[datetime] = None) -> datetime:
     hours = 24 + random.randint(0, 6)
     stop_time = start_time + timedelta(hours=hours)
     return stop_time
+
+
+def get_auto_stop_status() -> Dict[str, Any]:
+    """現在のautoStop状態を取得"""
+    global _bot_start_time
+    if _bot_start_time is None:
+        return {
+            'status': 'not_active',
+            'message': 'AutoStop is not active'
+        }
+    
+    stop_time = get_auto_stop_time(_bot_start_time)
+    now = datetime.now()
+    remaining_seconds = (stop_time - now).total_seconds()
+    
+    if remaining_seconds <= 0:
+        return {
+            'status': 'expired',
+            'message': 'AutoStop time has already passed',
+            'start_time': _bot_start_time.isoformat(),
+            'stop_time': stop_time.isoformat()
+        }
+    
+    return {
+        'status': 'active',
+        'message': 'AutoStop is active',
+        'start_time': _bot_start_time.isoformat(),
+        'stop_time': stop_time.isoformat(),
+        'remaining_hours': remaining_seconds / 3600,
+        'remaining_seconds': remaining_seconds
+    }
