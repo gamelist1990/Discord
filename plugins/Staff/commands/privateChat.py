@@ -1,13 +1,9 @@
 from discord.ext import commands
-from plugins import register_command
-from plugins.common_ui import ModalInputView
 import discord
-import asyncio
 from datetime import datetime
 from lib.op import get_op_level, OP_GUILD_ADMIN, has_op
 from plugins.Staff.util import StaffUtil
 from typing import Optional
-from discord.ui import View, Select
 
 PRIVATE_CATEGORY_NAME = "PrivateRoom"
 PRIVATE_TEXT_PREFIX = "private-"
@@ -161,18 +157,43 @@ async def setup_private_chat(ctx, room_name, members):
     await ctx.send(f"✅ プライベートチャット '{room_name}' を作成しました。\n{text_channel.mention} / {vc_channel.mention}")
 
 
-@commands.group(name="privateChat", invoke_without_command=True)
-async def private_chat_cmd(ctx, *, room_name=None):
+@commands.group(name="privateChat", invoke_without_command=False)
+async def private_chat_cmd(ctx):
+    # グループコマンド本体は直接実行させない（サブコマンドを使用）
+    if not await StaffUtil(ctx).is_staff():
+        await ctx.send("このコマンドはスタッフ専用です。")
+        return
+    # invoke_without_command=False のためここが呼ばれることは稀だが念のため。
+    await ctx.send("使い方: #staff privateChat help を参照してください。")
+
+
+@private_chat_cmd.command(name="help")
+async def private_chat_help(ctx):
+    """ヘルプ表示: サブコマンドの使い方を説明する"""
+    if not await StaffUtil(ctx).is_staff():
+        await ctx.send("このコマンドはスタッフ専用です。")
+        return
+    embed = discord.Embed(title="privateChat コマンドヘルプ", color=0x5865f2)
+    embed.add_field(name="作成", value="`/privateChat create <部屋名>` - 新しいプライベートチャットを作成します。", inline=False)
+    embed.add_field(name="変更", value="`/privateChat modify` - 現在のPrivateRoomカテゴリ内チャンネルで設定を変更します。", inline=False)
+    embed.add_field(name="閉じる", value="`/privateChat close [all|<チャンネルID>|<部屋名>]` - チャットを閉じます。", inline=False)
+    embed.add_field(name="一覧", value="`/privateChat list` - 作成済みプライベートチャットの一覧を表示します。", inline=False)
+    await ctx.send(embed=embed)
+
+
+@private_chat_cmd.command(name="create")
+async def private_chat_create(ctx, *, room_name: Optional[str] = None):
+    """create サブコマンド: 指定名でプライベートチャットを作成"""
     if not await StaffUtil(ctx).is_staff():
         await ctx.send("このコマンドはスタッフ専用です。")
         return
     if not room_name:
-        await ctx.send("使い方: #staff privateChat <部屋名>")
+        await ctx.send("使い方: #staff privateChat create <部屋名>")
         return
     await setup_private_chat(ctx, room_name, [])
 
 
-@private_chat_cmd.command(name="modify")
+@private_chat_cmd.command(name="modify") # pyright: ignore[reportFunctionMemberAccess]
 async def private_chat_modify(ctx):
     guild = ctx.guild
     if not await StaffUtil(ctx).is_staff():

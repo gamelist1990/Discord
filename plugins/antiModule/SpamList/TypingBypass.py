@@ -7,6 +7,8 @@ from plugins.antiModule.config import AntiCheatConfig
 
 class TypingBypass(BaseSpam):
     typing_timestamps = {}
+    # track users who already consumed their one-time grace pass
+    _grace_used = set()
     _bot: Any = None
     _on_typing_handler = None
     TYPING_BYPASS_WINDOW = 300
@@ -44,7 +46,12 @@ class TypingBypass(BaseSpam):
         url_pattern = r"^(https?://[\w\-._~:/?#\[\]@!$&'()*+,;=%]+)$"
         if re.fullmatch(url_pattern, content.strip()):
             return False
+        # If we have no typing timestamp for this user, allow a one-time grace pass
         if user_id not in TypingBypass.typing_timestamps:
+            if user_id not in TypingBypass._grace_used:
+                # consume the grace and allow this first message
+                TypingBypass._grace_used.add(user_id)
+                return False
             try:
                 await message.delete()
             except Exception as e:
