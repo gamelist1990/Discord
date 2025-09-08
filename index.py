@@ -524,7 +524,12 @@ def start_auto_stop_timer():
         except Exception as e:
             print(f"[ERROR] autoStop時のrun_push失敗: {e}")
         print("[INFO] --autoStop: サーバーを終了します。")
-        sys.exit(0)
+        # sys.exit only exits the current thread; use os._exit to terminate the whole process
+        try:
+            os._exit(0)
+        except Exception:
+            # Fallback to sys.exit if os._exit fails for any reason
+            sys.exit(0)
     threading.Thread(target=auto_stop_worker, daemon=True).start()
 
 
