@@ -1,0 +1,229 @@
+{
+  "1069498529866842173": {
+    "AntiCheat": {
+      "alert_channel": 1383100730847658054,
+      "bypass_role": 1069498529866842174,
+      "enabled": true,
+      "detection_settings": {
+        "text_spam": true,
+        "image_spam": true,
+        "mention_spam": true,
+        "token_spam": true,
+        "timebase_spam": true
+      }
+    }
+  },
+  "890315487962095637": {
+    "AntiCheat": {
+      "alert_channel": 1360665897068527946,
+      "bypass_role": 1340318302936764478,
+      "enabled": true,
+      "detection_settings": {
+        "text_spam": true,
+        "image_spam": true,
+        "mention_spam": true,
+        "token_spam": true,
+        "timebase_spam": true,
+        "typing_bypass": true,
+        "forward_spam": true
+      },
+      "flag_system": {
+        "enabled": true,
+        "decay_hours": 24,
+        "flag_weights": {
+          "text": 1,
+          "image": 2,
+          "mention": 3,
+          "token": 5,
+          "timebase": 2,
+          "typing_bypass": 1,
+          "forward": 4
+        },
+        "actions": [
+          {
+            "action": "timeout",
+            "duration": 300,
+            "flag_count": 5,
+            "message": "5違反ポイントによる発言停止です。"
+          },
+          {
+            "action": "timeout",
+            "duration": 600,
+            "flag_count": 10,
+            "message": "10違反ポイントによる発言停止です。"
+          },
+          {
+            "action": "timeout",
+            "duration": 900,
+            "flag_count": 15,
+            "message": "15違反ポイントによる発言停止です。"
+          },
+          {
+            "action": "timeout",
+            "duration": 3600,
+            "flag_count": 20,
+            "message": "20違反ポイントによる発言停止です。"
+          },
+          {
+            "action": "timeout",
+            "duration": 7200,
+            "flag_count": 25,
+            "message": "25違反ポイントによる発言停止です。"
+          },
+          {
+            "action": "timeout",
+            "duration": 86400,
+            "flag_count": 30,
+            "message": "30違反ポイントによる発言停止です。"
+          },
+          {
+            "action": "timeout",
+            "duration": 172800,
+            "flag_count": 35,
+            "message": "35違反ポイントによる発言停止です。"
+          },
+          {
+            "action": "timeout",
+            "duration": 518400,
+            "flag_count": 40,
+            "message": "40違反ポイントによる発言停止です。"
+          },
+          {
+            "action": "timeout",
+            "duration": 1036800,
+            "flag_count": 50,
+            "message": "50違反ポイントによる発言停止です。"
+          },
+          {
+            "action": "timeout",
+            "duration": 2073600,
+            "flag_count": 60,
+            "message": "60違反ポイントによる発言停止です。"
+          },
+          {
+            "action": "kick",
+            "flag_count": 70,
+            "message": "70違反ポイントによるサーバーから追放です。"
+          }
+        ]
+      },
+      "whitelist_channels": [
+        1111947939661754439
+      ]
+    },
+    "staffRole": "1340318302936764478",
+    "alertChannel": "1384045022210424882",
+    "youtube_channels": [
+      {
+        "channel_id": "UCue_c1nQyNwfZa2cLR4fo7g",
+        "channel_name": "こう君！",
+        "created_at": "2025-06-26T14:07:52.839578+09:00",
+        "interval": 1,
+        "last_live_status": "none",
+        "last_live_video_id": null,
+        "last_live_video_published": null,
+        "last_normal_video_id": "SUQDm5NilLY",
+        "last_normal_video_published": "2025-08-06T06:28:02+00:00",
+        "last_short_video_id": "bz-s95iFXXA",
+        "last_short_video_published": "2025-08-06T07:16:36+00:00",
+        "notification_channel": 1119320648448213043,
+        "notification_mode": "embed",
+        "rss_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCue_c1nQyNwfZa2cLR4fo7g",
+        "was_live": false
+      }
+    ],
+    "user_flags": {
+      "1371278226399428608": [
+        {
+          "channel_id": 1359115472242610217,
+          "flags_added": 1,
+          "message_id": 1392003369287155772,
+          "timestamp": 1751949867.830549,
+          "type": "text",
+          "violations": []
+        }
+      ],
+      "1386167352747622521": {
+        "flags": 2,
+        "last_decay": 1751006238.802845,
+        "violations": [
+          {
+            "channel_id": 1296388012552355852,
+            "flags_added": 2,
+            "message_id": 1388045493275463781,
+            "timestamp": 1751006238.802845,
+            "type": "image"
+          }
+        ]
+      },
+      "1324197102343159861": [
+        {
+          "channel_id": 1148749910825504888,
+          "flags_added": 1,
+          "message_id": 1397435877155668100,
+          "timestamp": 1753245078.224589,
+          "type": "text",
+          "violations": []
+        }
+      ],
+      "1057912581949489223": [
+        {
+          "channel_id": 1148749910825504888,
+          "flags_added": 1,
+          "message_id": 1397354623953797160,
+          "timestamp": 1753225705.661976,
+          "type": "text",
+          "violations": []
+        }
+      ]
+    }
+  },
+  "1130057359390150676": {
+    "AntiCheat": {
+      "alert_channel": null,
+      "bypass_role": 1380114633087783002,
+      "enabled": true,
+      "detection_settings": {
+        "text_spam": true,
+        "image_spam": true,
+        "mention_spam": true,
+        "token_spam": true,
+        "timebase_spam": true,
+        "typing_bypass": true,
+        "forward_spam": true
+      },
+      "flag_system": {
+        "actions": [],
+        "decay_hours": 24,
+        "enabled": false,
+        "flag_weights": {
+          "forward": 2,
+          "image": 2,
+          "mention": 3,
+          "text": 1,
+          "timebase": 2,
+          "token": 5,
+          "typing_bypass": 3
+        }
+      }
+    },
+    "staffRole": "1380114633087783002"
+  },
+  "1304404938138320926": {
+    "AntiCheat": {
+      "alert_channel": 1315126004368539648,
+      "bypass_role": 1327287410635051049,
+      "enabled": true,
+      "detection_settings": {
+        "text_spam": true,
+        "image_spam": true,
+        "mention_spam": true,
+        "token_spam": true,
+        "timebase_spam": true,
+        "typing_bypass": true,
+        "forward_spam": true
+      }
+    },
+    "staffRole": "1327286399610654732"
+  }
+}
