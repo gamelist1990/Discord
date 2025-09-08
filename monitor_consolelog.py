@@ -31,13 +31,13 @@ def monitor_consolelog(interval=10):
     print(f"[INFO] API_KEY: {API_KEY}")
     print(f"[INFO] Fetch interval: {interval}s\n")
     try:
+        print("=== New Console Log ===")
         while True:
             log = fetch_consolelog()
             if log is not None:
                 log_lines = log.split("\n")
                 new_start = len(last_log_lines)
                 if log_lines[new_start:]:
-                    print("=== New Console Log ===")
                     for line in log_lines[new_start:]:
                         print(f"\033[92m{line}\033[0m")  
                     last_log_lines = log_lines
