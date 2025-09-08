@@ -11,7 +11,6 @@ import difflib
 import re
 from collections import deque
 import discord
-import aiohttp
 
 
 class TextSpam(BaseSpam):
@@ -80,76 +79,7 @@ class TextSpam(BaseSpam):
         if dot_count >= 1:
             score += 0.2
 
-        # === フィルタリング単語・ID定義 ===
-        redirect_url_keywords = [
-            "bit.ly",
-            "goo.gl",
-            "t.co",
-            "tinyurl.com",
-            "ow.ly",
-            "is.gd",
-            "buff.ly",
-            "rebrand.ly",
-            "cutt.ly",
-            "adf.ly",
-            "shorte.st",
-            "lnkd.in",
-            "rb.gy",
-            "clck.ru",
-            "urlzs.com",
-            "v.gd",
-            "qr.ae",
-            "s.id",
-            "linktr.ee",
-            "redirect",
-            "jump",
-            "forward",
-            "outbound",
-            "phish",
-            "scam",
-            "00m.in",
-        ]
-        dangerous_keywords = [
-            "ozeu",
-            "ozeu-x",
-            "114514",
-            "おぜう",
-            "0301",
-            "ctkp",
-            "gift",
-            "horion",
-            "canary.discord.com",
-        ]
-
-        # URL検出の正規表現を強化
-        url_pattern = re.compile(
-            r"https?://(?:[\w-]+\.)+[\w-]+(?:/[\w\-./?%&=:#@]*)?",
-            re.IGNORECASE
-        )
-        urls = url_pattern.findall(content)
-        redirect_url_score = 0
-        for url in urls:
-            for keyword in redirect_url_keywords:
-                if keyword in url.lower():
-                    redirect_url_score += 0.5
-        if urls:
-            async with aiohttp.ClientSession() as session:
-                for url in urls:
-                    try:
-                        async with session.head(
-                            url,
-                            allow_redirects=True,
-                            timeout=aiohttp.ClientTimeout(total=5),
-                        ) as resp:
-                            final_url = str(resp.url)
-                            for dkw in dangerous_keywords:
-                                if dkw in final_url.lower():
-                                    redirect_url_score += 1.0
-                                    break
-                    except Exception:
-                        continue
-        if redirect_url_score > 0:
-            score += redirect_url_score
+            
         if score >= TEXT_SPAM_CONFIG["base_threshold"]:
             from plugins.antiModule.spam import spam_log_aggregator
 

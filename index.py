@@ -510,17 +510,15 @@ def handle_render_startup():
 
 def start_auto_stop_timer():
     import threading
-    from utils import get_auto_stop_time, get_bot_start_time
     def auto_stop_worker():
         import time
-        start_time = get_bot_start_time()
-        stop_time = get_auto_stop_time(start_time)
-        now = datetime.now()
-        wait_sec = (stop_time - now).total_seconds()
-        print(f"[INFO] --autoStop: {stop_time}に自動停止予定（{wait_sec:.0f}秒後）")
+        start_time = datetime.now()
+        stop_time = start_time + timedelta(hours=24)
+        wait_sec = (stop_time - datetime.now()).total_seconds()
+        print(f"[INFO] --autoStop: {stop_time} に自動停止予定（{wait_sec:.0f}秒後）")
         if wait_sec > 0:
             time.sleep(wait_sec)
-        print("[INFO] --autoStop: 停止処理開始。database.jsonをGitHubへプッシュします。")
+        print("[INFO] --autoStop: 24時間経過。database.jsonをGitHubへプッシュします。")
         try:
             run_push()
         except Exception as e:
